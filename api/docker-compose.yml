@@ -1,0 +1,41 @@
+services:
+  db:
+    container_name: eassessment-db
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: exam_user
+      POSTGRES_PASSWORD: exam_password
+      POSTGRES_DB: eassessment_app
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U exam_user -d eassessment_app"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    container_name: eassessment-api
+    build:
+      context: .
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://exam_user:exam_password@db:5432/eassessment_app?schema=public
+      DIRECT_URL: postgresql://exam_user:exam_password@db:5432/eassessment_app?schema=public
+    command: >
+      sh -c "npx prisma migrate deploy && node dist/server.js"
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
