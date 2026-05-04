@@ -162,4 +162,5 @@ enum QuestionType {
   MCQ
   GRAPH
   TABLE
+  CIRCUIT
 }

@@ -53,7 +53,7 @@ type SubQuestion = {
   sub_question_id: string;
   question: string;
   marks: number;
-  type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE';
+  type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT';
   options: McqOption[];
 };
 
@@ -62,7 +62,7 @@ type Question = {
   question_number: number;
   description: string;
   marks: number;
-  type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE';
+  type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT';
   sub_questions: SubQuestion[];
 };
 
@@ -150,7 +150,8 @@ const mapPaperResponseToExam = (paper: PaperResponse): ExamPaper => {
                   | 'DESCRIPTIVE'
                   | 'MCQ'
                   | 'GRAPH'
-                  | 'TABLE',
+                  | 'TABLE'
+                  | 'CIRCUIT',
                 options: mcqOptions,
               };
             })
@@ -998,12 +999,12 @@ export default function QuestionBuilderPage({
                           </Label>
                           <Select
                             value={currentSubQuestion.type}
-                            onValueChange={(value: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE') => {
-                              updateSubQuestion(
-                                currentQuestion.id,
-                                currentSubQuestion.sub_question_id,
-                                { type: value }
-                              );
+                            onValueChange={(value: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT') => {
+                                updateSubQuestion(
+                                  currentQuestion.id,
+                                  currentSubQuestion.sub_question_id,
+                                  { type: value }
+                                );
                               // Add default options when switching to MCQ
                               if (
                                 value === 'MCQ' &&
@@ -1037,6 +1038,9 @@ export default function QuestionBuilderPage({
                               </SelectItem>
                               <SelectItem value="TABLE">
                                 Table Answer
+                              </SelectItem>
+                              <SelectItem value="CIRCUIT">
+                                Circuit Answer
                               </SelectItem>
                             </SelectContent>
                           </Select>
@@ -1187,6 +1191,22 @@ export default function QuestionBuilderPage({
                         </div>
                       )}
 
+                      {currentSubQuestion.type === 'CIRCUIT' && (
+                        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                          <div>
+                            <Label className="text-sm font-semibold text-slate-700">
+                              Circuit Answer
+                            </Label>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Students can toggle the switch and connect the fixed terminals between the battery, switch, and bulb.
+                            </p>
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            The answer is stored as structured JSON in the same answerText field used by graph and table responses.
+                          </p>
+                        </div>
+                      )}
+
                       <div className="flex gap-2 pt-4">
                         <Button
                           onClick={() =>
@@ -1234,14 +1254,16 @@ export default function QuestionBuilderPage({
                         {currentSubQuestion.marks} mark
                         {currentSubQuestion.marks !== 1 ? 's' : ''}
                       </span>
-                        <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
+                      <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
                         {currentSubQuestion.type === 'MCQ'
                           ? 'MCQ'
                           : currentSubQuestion.type === 'GRAPH'
                             ? 'Graph'
                             : currentSubQuestion.type === 'TABLE'
                               ? 'Table'
-                            : 'Descriptive'}
+                              : currentSubQuestion.type === 'CIRCUIT'
+                                ? 'Circuit'
+                                : 'Descriptive'}
                       </span>
                     </div>
                     <div
