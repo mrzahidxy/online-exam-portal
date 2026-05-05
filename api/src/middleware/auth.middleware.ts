@@ -24,6 +24,12 @@ const normalizeOptions = (allowed?: GuardOptions): { roles?: UserRole[] } => {
   return allowed;
 };
 
+const isPrismaConnectionError = (error: unknown) =>
+  typeof error === 'object' &&
+  error !== null &&
+  'code' in error &&
+  (error as { code?: unknown }).code === 'P1001';
+
 export const requireAuth =
   (allowed?: GuardOptions) => async (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
     try {
@@ -83,6 +89,11 @@ export const requireAuth =
       req.auth = { ...payload, roles: effectiveRoles };
       next();
     } catch (error) {
+      if (isPrismaConnectionError(error)) {
+        next(new HttpError(503, 'Database is temporarily unavailable'));
+        return;
+      }
+
       next(error);
     }
   };

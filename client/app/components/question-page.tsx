@@ -32,6 +32,7 @@ const RichTextEditor = dynamic(
   }
 );
 import { useToast } from '@/hooks/use-toast';
+import { CircuitBoardDesigner } from '@/components/exam/circuit-board-designer';
 import {
   addQuestionsToPaper,
   fetchPaper,
@@ -39,6 +40,11 @@ import {
   type PaperQuestionPayload,
   type PaperResponse,
 } from '@/lib/paper-service';
+import {
+  createDefaultCircuitTemplate,
+  normalizeCircuitTemplate,
+  type CircuitTemplate,
+} from '@/lib/circuit-template';
 
 interface QuestionBuilderPageProps {
   paperId?: string;
@@ -55,6 +61,7 @@ type SubQuestion = {
   marks: number;
   type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT';
   options: McqOption[];
+  circuitTemplate: CircuitTemplate | null;
 };
 
 type Question = {
@@ -65,6 +72,8 @@ type Question = {
   type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT';
   sub_questions: SubQuestion[];
 };
+
+const DEFAULT_CIRCUIT_TEMPLATE: CircuitTemplate = createDefaultCircuitTemplate();
 
 type ExamPaper = {
   title: string;
@@ -91,6 +100,7 @@ const DEFAULT_EXAM: ExamPaper = {
           marks: 1,
           type: 'DESCRIPTIVE',
           options: [],
+          circuitTemplate: null,
         },
       ],
     },
@@ -153,6 +163,9 @@ const mapPaperResponseToExam = (paper: PaperResponse): ExamPaper => {
                   | 'TABLE'
                   | 'CIRCUIT',
                 options: mcqOptions,
+                circuitTemplate: normalizeCircuitTemplate(
+                  subQuestion.circuitTemplate
+                ),
               };
             })
           : [
@@ -162,6 +175,7 @@ const mapPaperResponseToExam = (paper: PaperResponse): ExamPaper => {
                 marks: 1,
                 type: 'DESCRIPTIVE' as const,
                 options: [],
+                circuitTemplate: null,
               },
             ];
 
@@ -260,6 +274,7 @@ export default function QuestionBuilderPage({
             marks: 1,
             type: 'DESCRIPTIVE',
             options: [],
+            circuitTemplate: null,
           },
         ],
       };
@@ -300,6 +315,7 @@ export default function QuestionBuilderPage({
                 marks: 1,
                 type: 'DESCRIPTIVE',
                 options: [],
+                circuitTemplate: null,
               },
             ],
           };
@@ -499,6 +515,13 @@ export default function QuestionBuilderPage({
                         mcqOptions: {
                           options: subQuestion.options,
                         },
+                      }
+                    : {}),
+                  ...(subQuestion.type === 'CIRCUIT'
+                    ? {
+                        circuitTemplate:
+                          subQuestion.circuitTemplate ??
+                          DEFAULT_CIRCUIT_TEMPLATE,
                       }
                     : {}),
                 })
@@ -1005,6 +1028,15 @@ export default function QuestionBuilderPage({
                                   currentSubQuestion.sub_question_id,
                                   { type: value }
                                 );
+                              if (value === 'CIRCUIT' && !currentSubQuestion.circuitTemplate) {
+                                updateSubQuestion(
+                                  currentQuestion.id,
+                                  currentSubQuestion.sub_question_id,
+                                  {
+                                    circuitTemplate: DEFAULT_CIRCUIT_TEMPLATE,
+                                  }
+                                );
+                              }
                               // Add default options when switching to MCQ
                               if (
                                 value === 'MCQ' &&
@@ -1195,15 +1227,25 @@ export default function QuestionBuilderPage({
                         <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
                           <div>
                             <Label className="text-sm font-semibold text-slate-700">
-                              Circuit Answer
+                              Circuit Board Designer
                             </Label>
                             <p className="mt-1 text-xs text-slate-500">
-                              Students can toggle the switch and connect the fixed terminals between the battery, switch, and bulb.
+                              Add battery, switch, and bulb components. Drag the pieces to position them on the board.
                             </p>
                           </div>
                           <p className="text-xs text-slate-500">
-                            The answer is stored as structured JSON in the same answerText field used by graph and table responses.
+                            The template is stored with the question and rendered for students using the same layout.
                           </p>
+                          <div className="rounded border border-slate-200 bg-white p-3">
+                            <CircuitBoardDesigner
+                              template={currentSubQuestion.circuitTemplate ?? DEFAULT_CIRCUIT_TEMPLATE}
+                              onChange={(nextTemplate) =>
+                                updateSubQuestion(currentQuestion.id, currentSubQuestion.sub_question_id, {
+                                  circuitTemplate: nextTemplate,
+                                })
+                              }
+                            />
+                          </div>
                         </div>
                       )}
 

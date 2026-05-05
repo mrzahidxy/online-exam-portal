@@ -1,3 +1,5 @@
+import type { CircuitTemplate } from "@/lib/circuit-template";
+
 export type Role = "admin" | "student";
 
 export type QuestionType = "mcq" | "short-answer" | "essay" | "numerical" | "table";
@@ -30,6 +32,7 @@ export interface SubQuestion {
       value: string;
     }>;
   } | null;
+  circuitTemplate?: CircuitTemplate | null;
 }
 
 export interface Assessment {
@@ -125,6 +128,7 @@ export interface SubmissionDetailSubQuestion {
       value: string;
     }>;
   } | null;
+  circuitTemplate?: CircuitTemplate | null;
   answer?: SubmissionDetailAnswer | null;
 }
 

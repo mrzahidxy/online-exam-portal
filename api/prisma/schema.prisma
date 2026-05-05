@@ -65,6 +65,7 @@ model SubQuestion {
   marks        Int
   questionType QuestionType  @default(DESCRIPTIVE)
   mcqOptions   Json?
+  circuitTemplate Json?
   position     Int
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt

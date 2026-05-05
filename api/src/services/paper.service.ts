@@ -1,4 +1,10 @@
-import { AccessStatus, PaperStatus, Prisma, UserRole } from '@prisma/client';
+import {
+  AccessStatus,
+  PaperStatus,
+  Prisma,
+  QuestionType,
+  UserRole,
+} from '@prisma/client';
 
 import {
   CreatePaperInput,
@@ -8,6 +14,7 @@ import {
   CreateQuestionInput,
   UpdateQuestionsInput,
   UpdateSubQuestionInput,
+  type CircuitTemplateInput,
 } from '../schemas/paper.schema';
 import { AuthenticatedUser } from '../types/user';
 import { HttpError } from '../utils/http-error';
@@ -81,6 +88,36 @@ const normalizePagination = (page = DEFAULT_PAGE, limit = DEFAULT_LIMIT) => {
   return { page: safePage, limit: safeLimit };
 };
 
+const normalizeQuestionType = (
+  questionType?: QuestionType
+): QuestionType => {
+  return questionType ?? QuestionType.DESCRIPTIVE;
+};
+
+const DEFAULT_CIRCUIT_TEMPLATE: CircuitTemplateInput = {
+  version: 1,
+  width: 720,
+  height: 320,
+  components: [
+    { id: 'battery-1', type: 'battery', x: 48, y: 70 },
+    { id: 'switch-1', type: 'switch', x: 252, y: 110 },
+    { id: 'bulb-1', type: 'bulb', x: 576, y: 160 },
+  ],
+};
+
+const resolveCircuitTemplate = (
+  questionType?: QuestionType,
+  template?: CircuitTemplateInput
+): CircuitTemplateInput | undefined => {
+  if (template) {
+    return template;
+  }
+
+  return questionType === QuestionType.CIRCUIT
+    ? DEFAULT_CIRCUIT_TEMPLATE
+    : undefined;
+};
+
 const validateDates = (start: Date, end: Date) => {
   if (end.getTime() <= start.getTime()) {
     throw new HttpError(400, 'End date must be after the start date');
@@ -103,8 +140,12 @@ const buildQuestionData = (questions?: CreateQuestionInput[]) => {
           question: sub.question,
           marks: sub.marks,
           position: sub.position,
-          questionType: (sub.questionType ?? 'DESCRIPTIVE') as any,
+          questionType: normalizeQuestionType(sub.questionType),
           mcqOptions: sub.mcqOptions ?? undefined,
+          circuitTemplate: resolveCircuitTemplate(
+            sub.questionType,
+            sub.circuitTemplate
+          ),
         })),
       },
     })),
@@ -226,10 +267,13 @@ const upsertSubQuestions = async (
         data.position = subInput.position;
       }
       if (subInput.questionType !== undefined) {
-        data.questionType = subInput.questionType as any;
+        data.questionType = subInput.questionType;
       }
       if (subInput.mcqOptions !== undefined) {
         data.mcqOptions = subInput.mcqOptions;
+      }
+      if (subInput.circuitTemplate !== undefined) {
+        data.circuitTemplate = subInput.circuitTemplate;
       }
 
       if (Object.keys(data).length === 0) {
@@ -273,8 +317,12 @@ const upsertSubQuestions = async (
         question: subInput.question,
         marks: subInput.marks,
         position: subInput.position,
-        questionType: (subInput.questionType ?? 'DESCRIPTIVE') as any,
+        questionType: normalizeQuestionType(subInput.questionType),
         mcqOptions: subInput.mcqOptions ?? undefined,
+        circuitTemplate: resolveCircuitTemplate(
+          subInput.questionType,
+          subInput.circuitTemplate
+        ),
       },
     });
   }
@@ -508,7 +556,7 @@ export const paperService = {
                 question: sub.question,
                 marks: sub.marks,
                 position: sub.position,
-                questionType: (sub.questionType ?? 'DESCRIPTIVE') as any,
+                questionType: normalizeQuestionType(sub.questionType),
                 mcqOptions: sub.mcqOptions ?? undefined,
               })),
             },
@@ -676,8 +724,12 @@ export const paperService = {
                   question: sub.question,
                   marks: sub.marks,
                   position: sub.position,
-                  questionType: (sub.questionType ?? 'DESCRIPTIVE') as any,
+                  questionType: normalizeQuestionType(sub.questionType),
                   mcqOptions: sub.mcqOptions ?? undefined,
+                  circuitTemplate: resolveCircuitTemplate(
+                    sub.questionType,
+                    sub.circuitTemplate
+                  ),
                 };
               }),
             },

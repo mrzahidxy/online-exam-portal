@@ -6,6 +6,7 @@ import { RichTextEditor } from "../rich-text-editor";
 import { GraphAnswerEditor } from "./graph-answer";
 import { CircuitAnswerEditor } from "./circuit-answer";
 import { TableAnswerEditor } from "./table-answer";
+import type { CircuitTemplate } from "@/lib/circuit-template";
 
 interface SubQuestionCardProps {
   questionPosition: number;
@@ -19,6 +20,7 @@ interface SubQuestionCardProps {
       value: string;
     }>;
   } | null;
+  circuitTemplate?: CircuitTemplate | null;
   answer: string;
   onAnswerChange: (value: string) => void;
   subQuestionId: string;
@@ -43,6 +45,7 @@ export const SubQuestionCard = memo(function SubQuestionCard({
   marks,
   questionType,
   mcqOptions,
+  circuitTemplate,
   answer,
   onAnswerChange,
   subQuestionId,
@@ -115,6 +118,7 @@ export const SubQuestionCard = memo(function SubQuestionCard({
             value={answer}
             onChange={onAnswerChange}
             readonly={readonly}
+            template={circuitTemplate}
           />
         ) : isTable ? (
           <TableAnswerEditor

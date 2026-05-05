@@ -34,6 +34,12 @@ const formatValidationDetails = (details: unknown): string | undefined => {
   return `${field}: ${message}`;
 };
 
+const isPrismaConnectionError = (error: unknown) =>
+  typeof error === 'object' &&
+  error !== null &&
+  'code' in error &&
+  (error as { code?: unknown }).code === 'P1001';
+
 export const notFoundHandler = (req: Request, res: Response) => {
   res.status(404).json({
     message: `Route ${req.originalUrl} not found`,
@@ -57,6 +63,13 @@ export const errorHandler = (error: unknown, _req: Request, res: Response, _next
 
     return res.status(error.statusCode).json({
       message: validationMessage ? `Validation failed: ${validationMessage}` : error.message,
+    });
+  }
+
+  if (isPrismaConnectionError(error)) {
+    logger.error({ err: error }, 'Database connection error');
+    return res.status(503).json({
+      message: 'Database is temporarily unavailable',
     });
   }
 

@@ -11,6 +11,7 @@ import { hashPassword } from '../src/utils/password';
 const prisma = new PrismaClient();
 const GRAPH_QUESTION_TYPE = 'GRAPH';
 const TABLE_QUESTION_TYPE = 'TABLE';
+const CIRCUIT_QUESTION_TYPE = 'CIRCUIT';
 const DESCRIPTIVE_QUESTION_TYPE = 'DESCRIPTIVE';
 const SAMPLE_GRAPH_ANSWER = JSON.stringify({
   version: 1,
@@ -35,13 +36,38 @@ const SAMPLE_TABLE_ANSWER = JSON.stringify({
     ['3', '460', 'Hz'],
   ],
 });
+const SAMPLE_CIRCUIT_ANSWER = JSON.stringify({
+  version: 1,
+  type: 'circuit',
+  switchOn: true,
+  connections: [
+    { from: 'battery.positive', to: 'switch.left' },
+    { from: 'switch.right', to: 'bulb.left' },
+    { from: 'battery.negative', to: 'bulb.right' },
+  ],
+  derived: {
+    isClosedCircuit: true,
+    litBulbs: 1,
+  },
+});
+const SAMPLE_CIRCUIT_TEMPLATE = {
+  version: 1,
+  width: 720,
+  height: 320,
+  battery: { x: 40, y: 68 },
+  switch: { x: 248, y: 104 },
+  bulb: { x: 582, y: 160 },
+};
+
+type CircuitTemplateSeed = typeof SAMPLE_CIRCUIT_TEMPLATE;
 
 type SubQuestionSeed = {
   label: string;
   question: string;
   marks: number;
   position: number;
-  questionType?: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE';
+  questionType?: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT';
+  circuitTemplate?: CircuitTemplateSeed;
 };
 
 type QuestionSeed = {
@@ -81,6 +107,7 @@ async function upsertUser({
       name,
       role,
       schoolCode,
+      passwordHash,
     },
     create: {
       email,
@@ -168,6 +195,7 @@ async function upsertSubQuestion(questionId: string, seed: SubQuestionSeed) {
       question: seed.question,
       marks: seed.marks,
       questionType: (seed.questionType ?? DESCRIPTIVE_QUESTION_TYPE) as any,
+      circuitTemplate: seed.circuitTemplate ?? undefined,
     },
     create: {
       questionId,
@@ -176,6 +204,7 @@ async function upsertSubQuestion(questionId: string, seed: SubQuestionSeed) {
       marks: seed.marks,
       position: seed.position,
       questionType: (seed.questionType ?? DESCRIPTIVE_QUESTION_TYPE) as any,
+      circuitTemplate: seed.circuitTemplate ?? undefined,
     },
   });
 }
@@ -301,6 +330,8 @@ async function seedSubmissionAnswersAndGrades({
         ? SAMPLE_GRAPH_ANSWER
         : subQuestion.questionType === TABLE_QUESTION_TYPE
           ? SAMPLE_TABLE_ANSWER
+          : subQuestion.questionType === CIRCUIT_QUESTION_TYPE
+            ? SAMPLE_CIRCUIT_ANSWER
         : `Sample answer for ${subQuestion.label}`;
 
     await prisma.answer.upsert({
@@ -434,6 +465,22 @@ async function main() {
             marks: 10,
             position: 1,
             questionType: TABLE_QUESTION_TYPE,
+          },
+        ],
+      },
+      {
+        position: 5,
+        contentHtml:
+          '<p>Build the simple circuit shown in the answer board and close the switch.</p>',
+        marks: 10,
+        subQuestions: [
+          {
+            label: 'a',
+            question: 'Connect the terminals to complete the circuit',
+            marks: 10,
+            position: 1,
+            questionType: CIRCUIT_QUESTION_TYPE,
+            circuitTemplate: SAMPLE_CIRCUIT_TEMPLATE,
           },
         ],
       },

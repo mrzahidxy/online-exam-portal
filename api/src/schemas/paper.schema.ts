@@ -12,6 +12,32 @@ const mcqOptionsSchema = z.object({
   options: z.array(mcqOptionSchema).min(2),
 });
 
+const circuitComponentSchema = z.object({
+  id: z.string().min(1),
+  type: z.enum(['battery', 'switch', 'bulb']),
+  x: z.number().int(),
+  y: z.number().int(),
+});
+
+const circuitTemplateSchema = z.object({
+  version: z.literal(1),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  components: z.array(circuitComponentSchema).min(1),
+}).superRefine((value, ctx) => {
+  const requiredTypes: Array<'battery' | 'switch' | 'bulb'> = ['battery', 'switch', 'bulb'];
+
+  for (const type of requiredTypes) {
+    if (!value.components.some((component) => component.type === type)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['components'],
+        message: `Circuit template must include at least one ${type}`,
+      });
+    }
+  }
+});
+
 const subQuestionInputSchema = z
   .object({
     label: z.string().min(1),
@@ -20,6 +46,7 @@ const subQuestionInputSchema = z
     position: z.number().int().positive(),
     questionType: questionTypeSchema.optional().default('DESCRIPTIVE'),
     mcqOptions: mcqOptionsSchema.optional(),
+    circuitTemplate: circuitTemplateSchema.optional(),
   })
   .refine(
     (data) => {
@@ -49,6 +76,7 @@ const updateSubQuestionInputSchema = z
     position: z.number().int().positive().optional(),
     questionType: questionTypeSchema.optional(),
     mcqOptions: mcqOptionsSchema.optional(),
+    circuitTemplate: circuitTemplateSchema.optional(),
   })
   .refine((data) => data.id || (data.position && data.label), {
     message: 'Sub-question id or both position and label are required',
@@ -60,7 +88,8 @@ const updateSubQuestionInputSchema = z
       data.marks !== undefined ||
       data.position !== undefined ||
       data.questionType !== undefined ||
-      data.mcqOptions !== undefined,
+      data.mcqOptions !== undefined ||
+      data.circuitTemplate !== undefined,
     { message: 'At least one sub-question field must be provided' }
   )
   .refine(
@@ -139,3 +168,4 @@ export type CreateQuestionsInput = z.infer<typeof createQuestionsSchema>;
 export type UpdateQuestionInput = z.infer<typeof updateQuestionInputSchema>;
 export type UpdateQuestionsInput = z.infer<typeof updateQuestionsSchema>;
 export type UpdateSubQuestionInput = z.infer<typeof updateSubQuestionInputSchema>;
+export type CircuitTemplateInput = z.infer<typeof circuitTemplateSchema>;

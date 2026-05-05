@@ -134,6 +134,7 @@ export default function ReviewAnswers({
                         <CircuitAnswerEditor
                           value={subQuestion.answer?.answerText ?? ""}
                           readonly
+                          template={subQuestion.circuitTemplate ?? undefined}
                         />
                       ) : isTable ? (
                         <TableAnswerEditor
