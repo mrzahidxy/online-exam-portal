@@ -25,7 +25,7 @@ export interface SubQuestion {
   question: string;
   marks: number;
   position: number;
-  questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "CIRCUIT";
+  questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "CIRCUIT" | "DRAWING";
   mcqOptions?: {
     options: Array<{
       label: string;
@@ -121,7 +121,7 @@ export interface SubmissionDetailSubQuestion {
   question?: string | null;
   marks?: number | null;
   position?: number | null;
-  questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "CIRCUIT";
+  questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "CIRCUIT" | "DRAWING";
   mcqOptions?: {
     options: Array<{
       label: string;

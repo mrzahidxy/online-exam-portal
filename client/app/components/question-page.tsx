@@ -59,7 +59,7 @@ type SubQuestion = {
   sub_question_id: string;
   question: string;
   marks: number;
-  type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT';
+  type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT' | 'DRAWING';
   options: McqOption[];
   circuitTemplate: CircuitTemplate | null;
 };
@@ -69,7 +69,7 @@ type Question = {
   question_number: number;
   description: string;
   marks: number;
-  type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT';
+  type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT' | 'DRAWING';
   sub_questions: SubQuestion[];
 };
 
@@ -161,7 +161,8 @@ const mapPaperResponseToExam = (paper: PaperResponse): ExamPaper => {
                   | 'MCQ'
                   | 'GRAPH'
                   | 'TABLE'
-                  | 'CIRCUIT',
+                  | 'CIRCUIT'
+                  | 'DRAWING',
                 options: mcqOptions,
                 circuitTemplate: normalizeCircuitTemplate(
                   subQuestion.circuitTemplate
@@ -1022,7 +1023,7 @@ export default function QuestionBuilderPage({
                           </Label>
                           <Select
                             value={currentSubQuestion.type}
-                            onValueChange={(value: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT') => {
+                            onValueChange={(value: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT' | 'DRAWING') => {
                                 updateSubQuestion(
                                   currentQuestion.id,
                                   currentSubQuestion.sub_question_id,
@@ -1073,6 +1074,9 @@ export default function QuestionBuilderPage({
                               </SelectItem>
                               <SelectItem value="CIRCUIT">
                                 Circuit Answer
+                              </SelectItem>
+                              <SelectItem value="DRAWING">
+                                Drawing Answer
                               </SelectItem>
                             </SelectContent>
                           </Select>
@@ -1249,6 +1253,22 @@ export default function QuestionBuilderPage({
                         </div>
                       )}
 
+                      {currentSubQuestion.type === 'DRAWING' && (
+                        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                          <div>
+                            <Label className="text-sm font-semibold text-slate-700">
+                              Drawing Answer
+                            </Label>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Students can draw freehand, lines, rectangles, circles, and arrows. The answer is stored as structured JSON in answerText.
+                            </p>
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            No extra board configuration is needed here. Use the student preview to verify the editor flow.
+                          </p>
+                        </div>
+                      )}
+
                       <div className="flex gap-2 pt-4">
                         <Button
                           onClick={() =>
@@ -1305,6 +1325,8 @@ export default function QuestionBuilderPage({
                               ? 'Table'
                               : currentSubQuestion.type === 'CIRCUIT'
                                 ? 'Circuit'
+                                : currentSubQuestion.type === 'DRAWING'
+                                  ? 'Drawing'
                                 : 'Descriptive'}
                       </span>
                     </div>

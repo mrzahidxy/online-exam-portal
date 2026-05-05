@@ -1,7 +1,7 @@
 import { PaperStatus } from '@prisma/client';
 import { z } from 'zod';
 
-const questionTypeSchema = z.enum(['DESCRIPTIVE', 'MCQ', 'GRAPH', 'TABLE', 'CIRCUIT']);
+const questionTypeSchema = z.enum(['DESCRIPTIVE', 'MCQ', 'GRAPH', 'TABLE', 'CIRCUIT', 'DRAWING']);
 
 const mcqOptionSchema = z.object({
   label: z.string().min(1),

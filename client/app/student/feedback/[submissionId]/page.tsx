@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSubmissionDetail } from "@/hooks/queries/useSubmissionDetail"
 import { GraphAnswerEditor } from "@/components/exam/graph-answer"
+import { DrawingAnswerEditor } from "@/components/exam/drawing-answer"
 import { TableAnswerEditor } from "@/components/exam/table-answer"
 
 export default function StudentFeedbackPage({
@@ -73,6 +74,7 @@ export default function StudentFeedbackPage({
                       const comment =
                         subQuestion.answer?.comment ?? subQuestion.answer?.marks?.comment ?? ""
                       const isGraph = subQuestion.questionType === "GRAPH"
+                      const isDrawing = subQuestion.questionType === "DRAWING"
                       const isTable = subQuestion.questionType === "TABLE"
                       return (
                         <div
@@ -94,6 +96,11 @@ export default function StudentFeedbackPage({
                           <div className="text-sm bg-muted/40 rounded p-2 min-h-10 text-foreground leading-snug">
                             {isGraph ? (
                               <GraphAnswerEditor
+                                value={subQuestion.answer?.answerText ?? ""}
+                                readonly
+                              />
+                            ) : isDrawing ? (
+                              <DrawingAnswerEditor
                                 value={subQuestion.answer?.answerText ?? ""}
                                 readonly
                               />

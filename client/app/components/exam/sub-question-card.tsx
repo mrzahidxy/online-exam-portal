@@ -4,6 +4,7 @@ import { memo } from "react";
 import he from "he";
 import { RichTextEditor } from "../rich-text-editor";
 import { GraphAnswerEditor } from "./graph-answer";
+import { DrawingAnswerEditor } from "./drawing-answer";
 import { CircuitAnswerEditor } from "./circuit-answer";
 import { TableAnswerEditor } from "./table-answer";
 import type { CircuitTemplate } from "@/lib/circuit-template";
@@ -53,6 +54,7 @@ export const SubQuestionCard = memo(function SubQuestionCard({
 }: SubQuestionCardProps) {
   const isMCQ = questionType === "MCQ" && mcqOptions;
   const isGraph = questionType === "GRAPH";
+  const isDrawing = questionType === "DRAWING";
   const isTable = questionType === "TABLE";
   const isCircuit = questionType === "CIRCUIT";
 
@@ -109,6 +111,12 @@ export const SubQuestionCard = memo(function SubQuestionCard({
           </div>
         ) : isGraph ? (
           <GraphAnswerEditor
+            value={answer}
+            onChange={onAnswerChange}
+            readonly={readonly}
+          />
+        ) : isDrawing ? (
+          <DrawingAnswerEditor
             value={answer}
             onChange={onAnswerChange}
             readonly={readonly}

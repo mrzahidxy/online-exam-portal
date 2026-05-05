@@ -4,6 +4,7 @@ import he from "he";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { GraphAnswerEditor } from "@/components/exam/graph-answer";
+import { DrawingAnswerEditor } from "@/components/exam/drawing-answer";
 import { CircuitAnswerEditor } from "@/components/exam/circuit-answer";
 import { TableAnswerEditor } from "@/components/exam/table-answer";
 import type { SubmissionDetail } from "@/types";
@@ -106,6 +107,7 @@ export default function ReviewAnswers({
                 const maxScore =
                   subQuestion.marks ?? subQuestion.answer?.marks?.max ?? 0;
                 const isGraph = subQuestion.questionType === "GRAPH";
+                const isDrawing = subQuestion.questionType === "DRAWING";
                 const isCircuit = subQuestion.questionType === "CIRCUIT";
                 const isTable = subQuestion.questionType === "TABLE";
 
@@ -127,6 +129,11 @@ export default function ReviewAnswers({
                     >
                       {isGraph ? (
                         <GraphAnswerEditor
+                          value={subQuestion.answer?.answerText ?? ""}
+                          readonly
+                        />
+                      ) : isDrawing ? (
+                        <DrawingAnswerEditor
                           value={subQuestion.answer?.answerText ?? ""}
                           readonly
                         />

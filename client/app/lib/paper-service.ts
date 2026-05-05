@@ -25,7 +25,7 @@ export interface PaperResponse extends PaperPayload {
       contentHtml?: string;
       marks?: number;
       position?: number;
-      questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "CIRCUIT";
+      questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "CIRCUIT" | "DRAWING";
       mcqOptions?: {
         options: Array<{
           label: string;
@@ -57,7 +57,7 @@ export interface PaperQuestionPayload {
     question: string;
     marks: number;
     position: number;
-    questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "CIRCUIT";
+    questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "CIRCUIT" | "DRAWING";
     mcqOptions?: {
       options: Array<{
         label: string;
