@@ -12,8 +12,18 @@ const prisma = new PrismaClient();
 const GRAPH_QUESTION_TYPE = 'GRAPH';
 const TABLE_QUESTION_TYPE = 'TABLE';
 const CIRCUIT_QUESTION_TYPE = 'CIRCUIT';
+const DRAWING_QUESTION_TYPE = 'DRAWING';
+const MCQ_QUESTION_TYPE = 'MCQ';
 const IMAGE_COMPOSITION_QUESTION_TYPE = 'IMAGE_COMPOSITION';
 const DESCRIPTIVE_QUESTION_TYPE = 'DESCRIPTIVE';
+const SAMPLE_MCQ_OPTIONS = {
+  options: [
+    { label: 'Option A', value: 'a' },
+    { label: 'Option B', value: 'b' },
+    { label: 'Option C', value: 'c' },
+    { label: 'Option D', value: 'd' },
+  ],
+};
 const SAMPLE_GRAPH_ANSWER = JSON.stringify({
   version: 1,
   type: 'graph',
@@ -26,6 +36,44 @@ const SAMPLE_GRAPH_ANSWER = JSON.stringify({
     start: { x: 0, y: 1 },
     end: { x: 4, y: 8 },
   },
+});
+const SAMPLE_DRAWING_ANSWER = JSON.stringify({
+  version: 1,
+  type: 'drawing',
+  canvas: {
+    width: 720,
+    height: 360,
+  },
+  elements: [
+    {
+      id: 'draw-1',
+      kind: 'freehand',
+      color: '#2563eb',
+      strokeWidth: 3,
+      points: [
+        { x: 72, y: 248 },
+        { x: 112, y: 208 },
+        { x: 156, y: 224 },
+        { x: 202, y: 180 },
+      ],
+    },
+    {
+      id: 'draw-2',
+      kind: 'rectangle',
+      color: '#dc2626',
+      strokeWidth: 4,
+      from: { x: 274, y: 72 },
+      to: { x: 412, y: 168 },
+    },
+    {
+      id: 'draw-3',
+      kind: 'arrow',
+      color: '#16a34a',
+      strokeWidth: 3,
+      from: { x: 472, y: 248 },
+      to: { x: 612, y: 160 },
+    },
+  ],
 });
 const SAMPLE_TABLE_ANSWER = JSON.stringify({
   version: 1,
@@ -145,6 +193,7 @@ type SubQuestionSeed = {
   marks: number;
   position: number;
   questionType?: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT' | 'DRAWING' | 'IMAGE_COMPOSITION';
+  mcqOptions?: { options: Array<{ label: string; value: string }> };
   circuitTemplate?: CircuitTemplateSeed;
   imageCompositionTemplate?: typeof SAMPLE_IMAGE_COMPOSITION_TEMPLATE;
 };
@@ -274,6 +323,7 @@ async function upsertSubQuestion(questionId: string, seed: SubQuestionSeed) {
       question: seed.question,
       marks: seed.marks,
       questionType: (seed.questionType ?? DESCRIPTIVE_QUESTION_TYPE) as any,
+      mcqOptions: seed.mcqOptions ?? undefined,
       circuitTemplate: seed.circuitTemplate ?? undefined,
       imageCompositionTemplate: seed.imageCompositionTemplate ?? undefined,
     },
@@ -284,6 +334,7 @@ async function upsertSubQuestion(questionId: string, seed: SubQuestionSeed) {
       marks: seed.marks,
       position: seed.position,
       questionType: (seed.questionType ?? DESCRIPTIVE_QUESTION_TYPE) as any,
+      mcqOptions: seed.mcqOptions ?? undefined,
       circuitTemplate: seed.circuitTemplate ?? undefined,
       imageCompositionTemplate: seed.imageCompositionTemplate ?? undefined,
     },
@@ -319,6 +370,7 @@ async function getPaperSubQuestions(paperId: string) {
           marks: true,
           position: true,
           questionType: true,
+          mcqOptions: true,
         },
       },
     },
@@ -326,6 +378,54 @@ async function getPaperSubQuestions(paperId: string) {
 
   return questions.flatMap((question) => question.subQuestions);
 }
+
+type SeededSubQuestion = Awaited<ReturnType<typeof getPaperSubQuestions>>[number];
+
+const getSeedAnswerText = (subQuestion: SeededSubQuestion) => {
+  if (subQuestion.questionType === GRAPH_QUESTION_TYPE) {
+    return SAMPLE_GRAPH_ANSWER;
+  }
+
+  if (subQuestion.questionType === TABLE_QUESTION_TYPE) {
+    return SAMPLE_TABLE_ANSWER;
+  }
+
+  if (subQuestion.questionType === CIRCUIT_QUESTION_TYPE) {
+    return SAMPLE_CIRCUIT_ANSWER;
+  }
+
+  if (subQuestion.questionType === DRAWING_QUESTION_TYPE) {
+    return SAMPLE_DRAWING_ANSWER;
+  }
+
+  if (subQuestion.questionType === IMAGE_COMPOSITION_QUESTION_TYPE) {
+    return SAMPLE_IMAGE_COMPOSITION_ANSWER;
+  }
+
+  if (subQuestion.questionType === MCQ_QUESTION_TYPE) {
+    const mcqOptions = subQuestion.mcqOptions as
+      | { options?: Array<{ label?: string; value?: string }> }
+      | null
+      | undefined;
+
+    const options =
+      mcqOptions &&
+      typeof mcqOptions === 'object' &&
+      !Array.isArray(mcqOptions) &&
+      'options' in mcqOptions &&
+      Array.isArray((mcqOptions as { options?: unknown }).options)
+        ? ((mcqOptions as { options?: Array<{ label?: string; value?: string }> }).options ?? [])
+        : [];
+
+    const selectedOption = options.find(
+      (option) => typeof option?.value === 'string' && option.value
+    ) ?? options[0];
+
+    return selectedOption?.value ?? 'a';
+  }
+
+  return `Sample answer for ${subQuestion.label}`;
+};
 
 async function upsertAccessRequest({
   studentId,
@@ -395,7 +495,7 @@ async function seedSubmissionAnswersAndGrades({
   reviewed,
 }: {
   submissionId: string;
-  subQuestions: Awaited<ReturnType<typeof getPaperSubQuestions>>;
+  subQuestions: SeededSubQuestion[];
   adminId: string;
   reviewed: boolean;
 }) {
@@ -406,17 +506,7 @@ async function seedSubmissionAnswersAndGrades({
   }
 
   for (const subQuestion of subQuestions) {
-    let answerText = `Sample answer for ${subQuestion.label}`;
-
-    if (subQuestion.questionType === GRAPH_QUESTION_TYPE) {
-      answerText = SAMPLE_GRAPH_ANSWER;
-    } else if (subQuestion.questionType === TABLE_QUESTION_TYPE) {
-      answerText = SAMPLE_TABLE_ANSWER;
-    } else if (subQuestion.questionType === CIRCUIT_QUESTION_TYPE) {
-      answerText = SAMPLE_CIRCUIT_ANSWER;
-    } else if (subQuestion.questionType === IMAGE_COMPOSITION_QUESTION_TYPE) {
-      answerText = SAMPLE_IMAGE_COMPOSITION_ANSWER;
-    }
+    const answerText = getSeedAnswerText(subQuestion);
 
     await prisma.answer.upsert({
       where: {
@@ -482,6 +572,14 @@ async function main() {
     password: 'changeMeStudent2!',
   });
 
+  const studentC = await upsertUser({
+    email: 'student3@exam.io',
+    name: 'Student 3',
+    schoolCode: 'SCHOOL-003',
+    role: UserRole.STUDENT,
+    password: 'changeMeStudent3!',
+  });
+
   const now = new Date();
   const runningPaper = await seedPaper(admin.id, {
     title: 'Mathematics Running Paper',
@@ -518,6 +616,22 @@ async function main() {
       {
         position: 3,
         contentHtml:
+          '<p>Choose the correct answer for the simplified form of 3x + 4x.</p>',
+        marks: 10,
+        subQuestions: [
+          {
+            label: 'a',
+            question: 'Select the correct option',
+            marks: 10,
+            position: 1,
+            questionType: MCQ_QUESTION_TYPE,
+            mcqOptions: SAMPLE_MCQ_OPTIONS,
+          },
+        ],
+      },
+      {
+        position: 4,
+        contentHtml:
           '<p>Plot the data points and draw a line of best fit on the graph.</p>',
         marks: 20,
         subQuestions: [
@@ -538,7 +652,7 @@ async function main() {
         ],
       },
       {
-        position: 4,
+        position: 5,
         contentHtml:
           '<p>Organize the measured values into a neat data table.</p>',
         marks: 10,
@@ -553,7 +667,7 @@ async function main() {
         ],
       },
       {
-        position: 5,
+        position: 6,
         contentHtml:
           '<p>Build the simple circuit shown in the answer board and close the switch.</p>',
         marks: 10,
@@ -569,7 +683,22 @@ async function main() {
         ],
       },
       {
-        position: 6,
+        position: 7,
+        contentHtml:
+          '<p>Create a sketch that shows a square, a curved line, and an arrow.</p>',
+        marks: 10,
+        subQuestions: [
+          {
+            label: 'a',
+            question: 'Draw the requested shapes on the canvas',
+            marks: 10,
+            position: 1,
+            questionType: DRAWING_QUESTION_TYPE,
+          },
+        ],
+      },
+      {
+        position: 8,
         contentHtml:
           '<p>Arrange the provided images into a layered composition on the canvas.</p>',
         marks: 10,
@@ -653,6 +782,13 @@ async function main() {
   });
 
   await upsertAccessRequest({
+    studentId: studentC.id,
+    paperId: runningPaper.id,
+    status: AccessStatus.APPROVED,
+    decidedById: admin.id,
+  });
+
+  await upsertAccessRequest({
     studentId: studentA.id,
     paperId: upcomingPaper.id,
     status: AccessStatus.APPROVED,
@@ -691,12 +827,25 @@ async function main() {
     reviewed: false,
   });
 
+  const participatingSubmission = await upsertSubmission({
+    studentId: studentC.id,
+    paperId: runningPaper.id,
+    status: SubmissionStatus.SUBMITTED,
+  });
+  await seedSubmissionAnswersAndGrades({
+    submissionId: participatingSubmission.id,
+    subQuestions: runningSubQuestions,
+    adminId: admin.id,
+    reviewed: false,
+  });
+
   console.info('Seed completed', {
     adminEmail: admin.email,
     runningPaperId: runningPaper.id,
     upcomingPaperId: upcomingPaper.id,
     reviewedSubmissionId: reviewedSubmission.id,
     pendingSubmissionId: pendingSubmission.id,
+    participatingSubmissionId: participatingSubmission.id,
   });
 }
 
