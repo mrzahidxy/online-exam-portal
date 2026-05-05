@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { GraphAnswerEditor } from "@/components/exam/graph-answer";
 import { DrawingAnswerEditor } from "@/components/exam/drawing-answer";
+import { ImageCompositionAnswerEditor } from "@/components/exam/image-composition-answer";
 import { CircuitAnswerEditor } from "@/components/exam/circuit-answer";
 import { TableAnswerEditor } from "@/components/exam/table-answer";
 import type { SubmissionDetail } from "@/types";
@@ -108,6 +109,7 @@ export default function ReviewAnswers({
                   subQuestion.marks ?? subQuestion.answer?.marks?.max ?? 0;
                 const isGraph = subQuestion.questionType === "GRAPH";
                 const isDrawing = subQuestion.questionType === "DRAWING";
+                const isImageComposition = subQuestion.questionType === "IMAGE_COMPOSITION";
                 const isCircuit = subQuestion.questionType === "CIRCUIT";
                 const isTable = subQuestion.questionType === "TABLE";
 
@@ -124,9 +126,7 @@ export default function ReviewAnswers({
                     <div className="text-[11px] text-muted-foreground">
                       Assigned: {grade}/{maxScore}
                     </div>
-                    <div
-                      className="preview-content review-answers-content text-sm bg-muted/40 rounded p-2 min-h-10 text-foreground leading-snug prose prose-sm max-w-none prose-ol:list-decimal prose-ul:list-disc prose-li:ml-4"
-                    >
+                    <div className="preview-content review-answers-content text-sm bg-muted/40 rounded p-2 min-h-10 text-foreground leading-snug">
                       {isGraph ? (
                         <GraphAnswerEditor
                           value={subQuestion.answer?.answerText ?? ""}
@@ -136,6 +136,12 @@ export default function ReviewAnswers({
                         <DrawingAnswerEditor
                           value={subQuestion.answer?.answerText ?? ""}
                           readonly
+                        />
+                      ) : isImageComposition ? (
+                        <ImageCompositionAnswerEditor
+                          value={subQuestion.answer?.answerText ?? ""}
+                          readonly
+                          template={subQuestion.imageCompositionTemplate ?? undefined}
                         />
                       ) : isCircuit ? (
                         <CircuitAnswerEditor
@@ -149,13 +155,15 @@ export default function ReviewAnswers({
                           readonly
                         />
                       ) : (
-                        <div
-                          dangerouslySetInnerHTML={{
-                            __html:
-                              decodeHtml(subQuestion.answer?.answerText ?? "") ||
-                              "No answer submitted.",
-                          }}
-                        />
+                        <div className="prose prose-sm max-w-none prose-ol:list-decimal prose-ul:list-disc prose-li:ml-4">
+                          <div
+                            dangerouslySetInnerHTML={{
+                              __html:
+                                decodeHtml(subQuestion.answer?.answerText ?? "") ||
+                                "No answer submitted.",
+                            }}
+                          />
+                        </div>
                       )}
                     </div>
                     <div className="flex items-center gap-2 text-xs">

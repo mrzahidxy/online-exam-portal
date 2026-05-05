@@ -3,9 +3,9 @@
 import { useRef } from "react";
 import { Editor } from "@tinymce/tinymce-react";
 import {
-  uploadMediaToGCS,
+  uploadMediaToCloudinary,
   createMediaFileInput,
-} from "@/lib/gcs-media-service";
+} from "@/lib/cloudinary-media-service";
 import { useCalculator } from "./calculator/CalculatorContext";
 
 interface RichTextEditorProps {
@@ -51,7 +51,7 @@ export function RichTextEditor({
         progress(30);
 
         // Upload to GCS
-        const result = await uploadMediaToGCS(file);
+        const result = await uploadMediaToCloudinary(file);
 
         (window as any).showDialogLoading?.(90);
         progress(90);
@@ -82,7 +82,7 @@ export function RichTextEditor({
       (window as any).showDialogLoading?.(20);
 
       // Upload to GCS
-      const result = await uploadMediaToGCS(file);
+      const result = await uploadMediaToCloudinary(file);
 
       (window as any).showDialogLoading?.(90);
 
@@ -212,7 +212,7 @@ export function RichTextEditor({
                 try {
                   (window as any).showDialogLoading?.(20);
 
-                  const result = await uploadMediaToGCS(file);
+                  const result = await uploadMediaToCloudinary(file);
 
                   (window as any).showDialogLoading?.(90);
                   onImageUpload?.(result.url);

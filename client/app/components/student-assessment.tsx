@@ -16,6 +16,8 @@ type StudentAssessmentProps = {
   assessmentId: string;
 };
 
+const DEFAULT_READING_TIME_SECONDS = 60;
+
 // Helper to strip HTML tags for answer validation
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ");
@@ -27,10 +29,17 @@ export default function StudentAssessment({
   // All hooks must be called at the top level before any conditional returns
   const { data: paper, isLoading, isError, error } = usePaper(assessmentId);
   const { user } = useAuthStore();
+  const readingTimeSeconds = useMemo(() => {
+    const raw = process.env.NEXT_PUBLIC_EXAM_INITIAL_BUFFER_SECONDS;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= 0
+      ? Math.round(parsed)
+      : DEFAULT_READING_TIME_SECONDS;
+  }, []);
 
   // Normalized state: answers keyed by subQuestionId (stable UUID)
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [timeRemaining, setTimeRemaining] = useState(120); // Start with 2 minutes buffer
+  const [timeRemaining, setTimeRemaining] = useState(readingTimeSeconds);
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);

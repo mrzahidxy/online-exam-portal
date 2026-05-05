@@ -66,6 +66,7 @@ model SubQuestion {
   questionType QuestionType  @default(DESCRIPTIVE)
   mcqOptions   Json?
   circuitTemplate Json?
+  imageCompositionTemplate Json?
   position     Int
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -165,4 +166,5 @@ enum QuestionType {
   TABLE
   CIRCUIT
   DRAWING
+  IMAGE_COMPOSITION
 }

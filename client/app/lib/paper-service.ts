@@ -1,5 +1,6 @@
 import axios from "axios";
 import type { CircuitTemplate } from "./circuit-template";
+import type { ImageCompositionTemplate } from "./image-composition-template";
 
 export interface PaperPayload {
   title: string;
@@ -18,22 +19,23 @@ export interface PaperResponse extends PaperPayload {
     contentHtml?: string;
     marks?: number;
     position?: number;
-    subQuestions?: Array<{
-      id?: string;
-      label?: string;
-      question?: string;
-      contentHtml?: string;
-      marks?: number;
-      position?: number;
-      questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "CIRCUIT" | "DRAWING";
-      mcqOptions?: {
-        options: Array<{
-          label: string;
-          value: string;
-        }>;
-      } | null;
-      circuitTemplate?: CircuitTemplate | null;
-    }>;
+      subQuestions?: Array<{
+        id?: string;
+        label?: string;
+        question?: string;
+        contentHtml?: string;
+        marks?: number;
+        position?: number;
+        questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "CIRCUIT" | "DRAWING" | "IMAGE_COMPOSITION";
+        mcqOptions?: {
+          options: Array<{
+            label: string;
+            value: string;
+          }>;
+        } | null;
+        circuitTemplate?: CircuitTemplate | null;
+        imageCompositionTemplate?: ImageCompositionTemplate | null;
+      }>;
   }>;
 }
 
@@ -57,7 +59,7 @@ export interface PaperQuestionPayload {
     question: string;
     marks: number;
     position: number;
-    questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "CIRCUIT" | "DRAWING";
+    questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "CIRCUIT" | "DRAWING" | "IMAGE_COMPOSITION";
     mcqOptions?: {
       options: Array<{
         label: string;
@@ -65,6 +67,7 @@ export interface PaperQuestionPayload {
       }>;
     } | null;
     circuitTemplate?: CircuitTemplate | null;
+    imageCompositionTemplate?: ImageCompositionTemplate | null;
   }>;
 }
 

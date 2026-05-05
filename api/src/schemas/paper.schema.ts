@@ -1,7 +1,7 @@
 import { PaperStatus } from '@prisma/client';
 import { z } from 'zod';
 
-const questionTypeSchema = z.enum(['DESCRIPTIVE', 'MCQ', 'GRAPH', 'TABLE', 'CIRCUIT', 'DRAWING']);
+const questionTypeSchema = z.enum(['DESCRIPTIVE', 'MCQ', 'GRAPH', 'TABLE', 'CIRCUIT', 'DRAWING', 'IMAGE_COMPOSITION']);
 
 const mcqOptionSchema = z.object({
   label: z.string().min(1),
@@ -38,6 +38,38 @@ const circuitTemplateSchema = z.object({
   }
 });
 
+const imageCompositionAssetSchema = z.object({
+  id: z.string().min(1),
+  src: z.string().min(1),
+  name: z.string().optional(),
+  x: z.number().int(),
+  y: z.number().int(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  zIndex: z.number().int(),
+  locked: z.boolean().optional(),
+});
+
+const imageCompositionTemplateSchema = z.object({
+  version: z.literal(1),
+  canvas: z.object({
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    backgroundColor: z.string().min(1),
+  }),
+  backgroundImage: z
+    .object({
+      src: z.string().min(1),
+      name: z.string().optional(),
+      width: z.number().int().positive(),
+      height: z.number().int().positive(),
+      fit: z.enum(['cover', 'contain']),
+    })
+    .nullable()
+    .optional(),
+  assets: z.array(imageCompositionAssetSchema),
+});
+
 const subQuestionInputSchema = z
   .object({
     label: z.string().min(1),
@@ -47,6 +79,7 @@ const subQuestionInputSchema = z
     questionType: questionTypeSchema.optional().default('DESCRIPTIVE'),
     mcqOptions: mcqOptionsSchema.optional(),
     circuitTemplate: circuitTemplateSchema.optional(),
+    imageCompositionTemplate: imageCompositionTemplateSchema.optional(),
   })
   .refine(
     (data) => {
@@ -77,6 +110,7 @@ const updateSubQuestionInputSchema = z
     questionType: questionTypeSchema.optional(),
     mcqOptions: mcqOptionsSchema.optional(),
     circuitTemplate: circuitTemplateSchema.optional(),
+    imageCompositionTemplate: imageCompositionTemplateSchema.optional(),
   })
   .refine((data) => data.id || (data.position && data.label), {
     message: 'Sub-question id or both position and label are required',
@@ -89,7 +123,8 @@ const updateSubQuestionInputSchema = z
       data.position !== undefined ||
       data.questionType !== undefined ||
       data.mcqOptions !== undefined ||
-      data.circuitTemplate !== undefined,
+      data.circuitTemplate !== undefined ||
+      data.imageCompositionTemplate !== undefined,
     { message: 'At least one sub-question field must be provided' }
   )
   .refine(
@@ -169,3 +204,4 @@ export type UpdateQuestionInput = z.infer<typeof updateQuestionInputSchema>;
 export type UpdateQuestionsInput = z.infer<typeof updateQuestionsSchema>;
 export type UpdateSubQuestionInput = z.infer<typeof updateSubQuestionInputSchema>;
 export type CircuitTemplateInput = z.infer<typeof circuitTemplateSchema>;
+export type ImageCompositionTemplateInput = z.infer<typeof imageCompositionTemplateSchema>;

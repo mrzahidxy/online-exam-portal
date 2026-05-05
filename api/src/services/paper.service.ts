@@ -15,6 +15,7 @@ import {
   UpdateQuestionsInput,
   UpdateSubQuestionInput,
   type CircuitTemplateInput,
+  type ImageCompositionTemplateInput,
 } from '../schemas/paper.schema';
 import { AuthenticatedUser } from '../types/user';
 import { HttpError } from '../utils/http-error';
@@ -105,6 +106,17 @@ const DEFAULT_CIRCUIT_TEMPLATE: CircuitTemplateInput = {
   ],
 };
 
+const DEFAULT_IMAGE_COMPOSITION_TEMPLATE: ImageCompositionTemplateInput = {
+  version: 1,
+  canvas: {
+    width: 960,
+    height: 540,
+    backgroundColor: '#ffffff',
+  },
+  backgroundImage: null,
+  assets: [],
+};
+
 const resolveCircuitTemplate = (
   questionType?: QuestionType,
   template?: CircuitTemplateInput
@@ -115,6 +127,19 @@ const resolveCircuitTemplate = (
 
   return questionType === QuestionType.CIRCUIT
     ? DEFAULT_CIRCUIT_TEMPLATE
+    : undefined;
+};
+
+const resolveImageCompositionTemplate = (
+  questionType?: QuestionType,
+  template?: ImageCompositionTemplateInput
+): ImageCompositionTemplateInput | undefined => {
+  if (template) {
+    return template;
+  }
+
+  return questionType === QuestionType.IMAGE_COMPOSITION
+    ? DEFAULT_IMAGE_COMPOSITION_TEMPLATE
     : undefined;
 };
 
@@ -134,22 +159,26 @@ const buildQuestionData = (questions?: CreateQuestionInput[]) => {
       contentHtml: question.contentHtml,
       marks: question.marks,
       position: question.position,
-      subQuestions: {
-        create: question.subQuestions.map((sub) => ({
-          label: sub.label,
-          question: sub.question,
-          marks: sub.marks,
-          position: sub.position,
-          questionType: normalizeQuestionType(sub.questionType),
-          mcqOptions: sub.mcqOptions ?? undefined,
-          circuitTemplate: resolveCircuitTemplate(
-            sub.questionType,
-            sub.circuitTemplate
-          ),
+          subQuestions: {
+            create: question.subQuestions.map((sub) => ({
+              label: sub.label,
+              question: sub.question,
+              marks: sub.marks,
+              position: sub.position,
+              questionType: normalizeQuestionType(sub.questionType),
+              mcqOptions: sub.mcqOptions ?? undefined,
+              circuitTemplate: resolveCircuitTemplate(
+                sub.questionType,
+                sub.circuitTemplate
+              ),
+              imageCompositionTemplate: resolveImageCompositionTemplate(
+                sub.questionType,
+                sub.imageCompositionTemplate
+              ),
+            })),
+          },
         })),
-      },
-    })),
-  };
+      };
 };
 
 const listWhere = (
@@ -275,6 +304,9 @@ const upsertSubQuestions = async (
       if (subInput.circuitTemplate !== undefined) {
         data.circuitTemplate = subInput.circuitTemplate;
       }
+      if (subInput.imageCompositionTemplate !== undefined) {
+        data.imageCompositionTemplate = subInput.imageCompositionTemplate;
+      }
 
       if (Object.keys(data).length === 0) {
         continue;
@@ -322,6 +354,10 @@ const upsertSubQuestions = async (
         circuitTemplate: resolveCircuitTemplate(
           subInput.questionType,
           subInput.circuitTemplate
+        ),
+        imageCompositionTemplate: resolveImageCompositionTemplate(
+          subInput.questionType,
+          subInput.imageCompositionTemplate
         ),
       },
     });
@@ -729,6 +765,10 @@ export const paperService = {
                   circuitTemplate: resolveCircuitTemplate(
                     sub.questionType,
                     sub.circuitTemplate
+                  ),
+                  imageCompositionTemplate: resolveImageCompositionTemplate(
+                    sub.questionType,
+                    sub.imageCompositionTemplate
                   ),
                 };
               }),

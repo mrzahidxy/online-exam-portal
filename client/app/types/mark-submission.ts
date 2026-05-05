@@ -1,4 +1,5 @@
 import type { CircuitTemplate } from "@/lib/circuit-template";
+import type { ImageCompositionTemplate } from "@/lib/image-composition-template";
 
 export type Role = "admin" | "student";
 
@@ -25,7 +26,7 @@ export interface SubQuestion {
   question: string;
   marks: number;
   position: number;
-  questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "CIRCUIT" | "DRAWING";
+  questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "CIRCUIT" | "DRAWING" | "IMAGE_COMPOSITION";
   mcqOptions?: {
     options: Array<{
       label: string;
@@ -33,6 +34,7 @@ export interface SubQuestion {
     }>;
   } | null;
   circuitTemplate?: CircuitTemplate | null;
+  imageCompositionTemplate?: ImageCompositionTemplate | null;
 }
 
 export interface Assessment {
@@ -121,7 +123,7 @@ export interface SubmissionDetailSubQuestion {
   question?: string | null;
   marks?: number | null;
   position?: number | null;
-  questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "CIRCUIT" | "DRAWING";
+  questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "CIRCUIT" | "DRAWING" | "IMAGE_COMPOSITION";
   mcqOptions?: {
     options: Array<{
       label: string;
@@ -129,6 +131,7 @@ export interface SubmissionDetailSubQuestion {
     }>;
   } | null;
   circuitTemplate?: CircuitTemplate | null;
+  imageCompositionTemplate?: ImageCompositionTemplate | null;
   answer?: SubmissionDetailAnswer | null;
 }
 

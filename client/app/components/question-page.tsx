@@ -33,6 +33,7 @@ const RichTextEditor = dynamic(
 );
 import { useToast } from '@/hooks/use-toast';
 import { CircuitBoardDesigner } from '@/components/exam/circuit-board-designer';
+import { ImageCompositionBoardDesigner } from '@/components/exam/image-composition-board-designer';
 import {
   addQuestionsToPaper,
   fetchPaper,
@@ -45,6 +46,11 @@ import {
   normalizeCircuitTemplate,
   type CircuitTemplate,
 } from '@/lib/circuit-template';
+import {
+  createDefaultImageCompositionTemplate,
+  normalizeImageCompositionTemplate,
+  type ImageCompositionTemplate,
+} from '@/lib/image-composition-template';
 
 interface QuestionBuilderPageProps {
   paperId?: string;
@@ -59,9 +65,10 @@ type SubQuestion = {
   sub_question_id: string;
   question: string;
   marks: number;
-  type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT' | 'DRAWING';
+  type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT' | 'DRAWING' | 'IMAGE_COMPOSITION';
   options: McqOption[];
   circuitTemplate: CircuitTemplate | null;
+  imageCompositionTemplate: ImageCompositionTemplate | null;
 };
 
 type Question = {
@@ -69,11 +76,13 @@ type Question = {
   question_number: number;
   description: string;
   marks: number;
-  type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT' | 'DRAWING';
+  type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT' | 'DRAWING' | 'IMAGE_COMPOSITION';
   sub_questions: SubQuestion[];
 };
 
 const DEFAULT_CIRCUIT_TEMPLATE: CircuitTemplate = createDefaultCircuitTemplate();
+const DEFAULT_IMAGE_COMPOSITION_TEMPLATE: ImageCompositionTemplate =
+  createDefaultImageCompositionTemplate();
 
 type ExamPaper = {
   title: string;
@@ -101,6 +110,7 @@ const DEFAULT_EXAM: ExamPaper = {
           type: 'DESCRIPTIVE',
           options: [],
           circuitTemplate: null,
+          imageCompositionTemplate: null,
         },
       ],
     },
@@ -162,10 +172,14 @@ const mapPaperResponseToExam = (paper: PaperResponse): ExamPaper => {
                   | 'GRAPH'
                   | 'TABLE'
                   | 'CIRCUIT'
-                  | 'DRAWING',
+                  | 'DRAWING'
+                  | 'IMAGE_COMPOSITION',
                 options: mcqOptions,
                 circuitTemplate: normalizeCircuitTemplate(
                   subQuestion.circuitTemplate
+                ),
+                imageCompositionTemplate: normalizeImageCompositionTemplate(
+                  subQuestion.imageCompositionTemplate
                 ),
               };
             })
@@ -177,6 +191,7 @@ const mapPaperResponseToExam = (paper: PaperResponse): ExamPaper => {
                 type: 'DESCRIPTIVE' as const,
                 options: [],
                 circuitTemplate: null,
+                imageCompositionTemplate: null,
               },
             ];
 
@@ -267,18 +282,19 @@ export default function QuestionBuilderPage({
         question_number: count,
         description: '',
         marks: 1,
-        type: 'DESCRIPTIVE',
-        sub_questions: [
-          {
-            sub_question_id: 'a',
-            question: '',
-            marks: 1,
             type: 'DESCRIPTIVE',
-            options: [],
-            circuitTemplate: null,
-          },
-        ],
-      };
+            sub_questions: [
+              {
+                sub_question_id: 'a',
+                question: '',
+                marks: 1,
+                type: 'DESCRIPTIVE',
+                options: [],
+                circuitTemplate: null,
+                imageCompositionTemplate: null,
+              },
+            ],
+          };
       return {
         ...prev,
         questions: [...prev.questions, newQuestion],
@@ -317,6 +333,7 @@ export default function QuestionBuilderPage({
                 type: 'DESCRIPTIVE',
                 options: [],
                 circuitTemplate: null,
+                imageCompositionTemplate: null,
               },
             ],
           };
@@ -493,6 +510,21 @@ export default function QuestionBuilderPage({
   const currentSubQuestion = currentQuestion?.sub_questions.find(
     (sq) => sq.sub_question_id === currentSubQuestionId
   );
+  const currentSubQuestionTypeLabel = currentSubQuestion
+    ? currentSubQuestion.type === 'MCQ'
+      ? 'MCQ'
+      : currentSubQuestion.type === 'GRAPH'
+        ? 'Graph'
+        : currentSubQuestion.type === 'TABLE'
+          ? 'Table'
+          : currentSubQuestion.type === 'CIRCUIT'
+            ? 'Circuit'
+            : currentSubQuestion.type === 'DRAWING'
+              ? 'Drawing'
+              : currentSubQuestion.type === 'IMAGE_COMPOSITION'
+                ? 'Image Composition'
+                : 'Descriptive'
+    : 'Descriptive';
   const hasExistingQuestions = (paperMeta?.questions?.length ?? 0) > 0;
 
   const questionPayload = useMemo<PaperQuestionPayload[]>(
@@ -523,6 +555,13 @@ export default function QuestionBuilderPage({
                         circuitTemplate:
                           subQuestion.circuitTemplate ??
                           DEFAULT_CIRCUIT_TEMPLATE,
+                      }
+                    : {}),
+                  ...(subQuestion.type === 'IMAGE_COMPOSITION'
+                    ? {
+                        imageCompositionTemplate:
+                          subQuestion.imageCompositionTemplate ??
+                          DEFAULT_IMAGE_COMPOSITION_TEMPLATE,
                       }
                     : {}),
                 })
@@ -1023,7 +1062,7 @@ export default function QuestionBuilderPage({
                           </Label>
                           <Select
                             value={currentSubQuestion.type}
-                            onValueChange={(value: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT' | 'DRAWING') => {
+                            onValueChange={(value: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT' | 'DRAWING' | 'IMAGE_COMPOSITION') => {
                                 updateSubQuestion(
                                   currentQuestion.id,
                                   currentSubQuestion.sub_question_id,
@@ -1035,6 +1074,19 @@ export default function QuestionBuilderPage({
                                   currentSubQuestion.sub_question_id,
                                   {
                                     circuitTemplate: DEFAULT_CIRCUIT_TEMPLATE,
+                                  }
+                                );
+                              }
+                              if (
+                                value === 'IMAGE_COMPOSITION' &&
+                                !currentSubQuestion.imageCompositionTemplate
+                              ) {
+                                updateSubQuestion(
+                                  currentQuestion.id,
+                                  currentSubQuestion.sub_question_id,
+                                  {
+                                    imageCompositionTemplate:
+                                      DEFAULT_IMAGE_COMPOSITION_TEMPLATE,
                                   }
                                 );
                               }
@@ -1077,6 +1129,9 @@ export default function QuestionBuilderPage({
                               </SelectItem>
                               <SelectItem value="DRAWING">
                                 Drawing Answer
+                              </SelectItem>
+                              <SelectItem value="IMAGE_COMPOSITION">
+                                Image Composition
                               </SelectItem>
                             </SelectContent>
                           </Select>
@@ -1269,6 +1324,39 @@ export default function QuestionBuilderPage({
                         </div>
                       )}
 
+                      {currentSubQuestion.type === 'IMAGE_COMPOSITION' && (
+                        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                          <div>
+                            <Label className="text-sm font-semibold text-slate-700">
+                              Image Composition
+                            </Label>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Students can drag, drop, resize, and layer multiple images on a canvas. The answer is stored as structured JSON in answerText.
+                            </p>
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            This is useful for collage-style tasks, image ordering, or visual assembly questions.
+                          </p>
+                          <div className="rounded border border-slate-200 bg-white p-3">
+                            <ImageCompositionBoardDesigner
+                              template={
+                                currentSubQuestion.imageCompositionTemplate ??
+                                DEFAULT_IMAGE_COMPOSITION_TEMPLATE
+                              }
+                              onChange={(nextTemplate) =>
+                                updateSubQuestion(
+                                  currentQuestion.id,
+                                  currentSubQuestion.sub_question_id,
+                                  {
+                                    imageCompositionTemplate: nextTemplate,
+                                  }
+                                )
+                              }
+                            />
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex gap-2 pt-4">
                         <Button
                           onClick={() =>
@@ -1317,17 +1405,7 @@ export default function QuestionBuilderPage({
                         {currentSubQuestion.marks !== 1 ? 's' : ''}
                       </span>
                       <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
-                        {currentSubQuestion.type === 'MCQ'
-                          ? 'MCQ'
-                          : currentSubQuestion.type === 'GRAPH'
-                            ? 'Graph'
-                            : currentSubQuestion.type === 'TABLE'
-                              ? 'Table'
-                              : currentSubQuestion.type === 'CIRCUIT'
-                                ? 'Circuit'
-                                : currentSubQuestion.type === 'DRAWING'
-                                  ? 'Drawing'
-                                : 'Descriptive'}
+                        {currentSubQuestionTypeLabel}
                       </span>
                     </div>
                     <div

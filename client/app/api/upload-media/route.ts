@@ -1,38 +1,38 @@
+import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { Storage } from "@google-cloud/storage";
 
-export const runtime = "nodejs"; // IMPORTANT (avoid edge runtime)
+export const runtime = "nodejs";
 
 type MediaType = "image" | "video";
 
 interface MediaUploadResult {
-  url: string; // signed url (safe default)
-  fileName: string; // path inside bucket
+  url: string;
+  fileName: string;
   mediaType: MediaType;
-  publicUrl?: string; // only useful if your bucket/object is publicly readable
+  publicUrl?: string;
 }
 
 function getEnv() {
   const env = {
-    GCS_PROJECT_ID: process.env.GCS_PROJECT_ID,
-    GCS_CLIENT_EMAIL: process.env.GCS_CLIENT_EMAIL,
-    GCS_PRIVATE_KEY: process.env.GCS_PRIVATE_KEY,
-    GCS_BUCKET_NAME: process.env.GCS_BUCKET_NAME,
+    CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME,
+    CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY,
+    CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET,
+    CLOUDINARY_FOLDER: process.env.CLOUDINARY_FOLDER,
   };
 
   const missing = Object.entries(env)
-    .filter(([, v]) => !v)
-    .map(([k]) => k);
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
 
   if (missing.length) {
     throw new Error(`Missing environment variables: ${missing.join(", ")}`);
   }
 
   return {
-    GCS_PROJECT_ID: env.GCS_PROJECT_ID!,
-    GCS_CLIENT_EMAIL: env.GCS_CLIENT_EMAIL!,
-    GCS_PRIVATE_KEY: env.GCS_PRIVATE_KEY!.replace(/\\n/g, "\n"),
-    GCS_BUCKET_NAME: env.GCS_BUCKET_NAME!,
+    CLOUDINARY_CLOUD_NAME: env.CLOUDINARY_CLOUD_NAME!,
+    CLOUDINARY_API_KEY: env.CLOUDINARY_API_KEY!,
+    CLOUDINARY_API_SECRET: env.CLOUDINARY_API_SECRET!,
+    CLOUDINARY_FOLDER: env.CLOUDINARY_FOLDER || "online-exam-portal",
   };
 }
 
@@ -43,23 +43,25 @@ function getMediaType(file: File): MediaType {
 }
 
 function validateMediaFile(file: File): void {
-  const maxSize = 50 * 1024 * 1024; // 50MB
+  const maxSize = 50 * 1024 * 1024;
 
   const allowedImageTypes = [
     "image/jpeg",
+    "image/jpg",
     "image/png",
     "image/gif",
     "image/webp",
     "image/svg+xml",
   ];
 
-  // include common browser MIME variants
   const allowedVideoTypes = [
     "video/mp4",
     "video/webm",
     "video/ogg",
-    "video/quicktime", // mov
-    "video/x-msvideo", // avi
+    "video/avi",
+    "video/x-msvideo",
+    "video/mov",
+    "video/quicktime",
   ];
 
   if (file.size > maxSize) {
@@ -84,63 +86,67 @@ function toErrorPayload(err: unknown) {
   const message = e?.message
     ? String(e.message)
     : typeof e === "string"
-    ? e
-    : JSON.stringify(e);
+      ? e
+      : JSON.stringify(e);
 
   const details = e?.response?.data ?? e?.errors ?? e;
 
   return { message, details };
 }
 
-async function uploadMediaToGCS(file: File): Promise<MediaUploadResult> {
+function buildSignature(params: Record<string, string>, apiSecret: string) {
+  const serialized = Object.keys(params)
+    .sort()
+    .map((key) => `${key}=${params[key]}`)
+    .join("&");
+
+  return createHash("sha1").update(`${serialized}${apiSecret}`).digest("hex");
+}
+
+async function uploadMediaToCloudinary(file: File): Promise<MediaUploadResult> {
   validateMediaFile(file);
 
   const env = getEnv();
-
-  const storage = new Storage({
-    projectId: env.GCS_PROJECT_ID,
-    credentials: {
-      client_email: env.GCS_CLIENT_EMAIL,
-      private_key: env.GCS_PRIVATE_KEY,
-    },
-  });
-
-  const bucket = storage.bucket(env.GCS_BUCKET_NAME);
-
   const mediaType = getMediaType(file);
-  const folder = mediaType === "image" ? "images" : "videos";
-
-  const timestamp = Date.now();
-  const random = Math.random().toString(36).slice(2, 10);
-  const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
-  const fileName = `${folder}/${timestamp}-${random}.${ext}`;
-
-  const fileRef = bucket.file(fileName);
-
-  const arrayBuffer = await file.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-
-  await fileRef.save(buffer, {
-    metadata: {
-      contentType: file.type,
-      cacheControl: "public, max-age=31536000",
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const folder = `${env.CLOUDINARY_FOLDER}/${mediaType === "image" ? "images" : "videos"}`;
+  const signature = buildSignature(
+    {
+      folder,
+      timestamp,
     },
-    resumable: false,
-  });
+    env.CLOUDINARY_API_SECRET
+  );
 
-  // Works regardless of UBLA/public settings:
-  const [signedUrl] = await fileRef.getSignedUrl({
-    action: "read",
-    expires: Date.now() + 1000 * 60 * 60 * 24 * 7, // 7 days
-  });
+  const formData = new FormData();
+  formData.append("file", file, file.name);
+  formData.append("api_key", env.CLOUDINARY_API_KEY);
+  formData.append("timestamp", timestamp);
+  formData.append("folder", folder);
+  formData.append("signature", signature);
 
-  // Only works if bucket/object is publicly readable (IAM/public access):
-  const publicUrl = `https://storage.googleapis.com/${env.GCS_BUCKET_NAME}/${fileName}`;
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/auto/upload`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      payload?.error?.message ||
+        payload?.message ||
+        `Cloudinary upload failed (${response.status})`
+    );
+  }
 
   return {
-    url: signedUrl,
-    publicUrl,
-    fileName,
+    url: payload.secure_url,
+    publicUrl: payload.secure_url,
+    fileName: payload.public_id,
     mediaType,
   };
 }
@@ -154,13 +160,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    const result = await uploadMediaToGCS(file);
+    const result = await uploadMediaToCloudinary(file);
 
     return NextResponse.json(
       {
         success: true,
-        url: result.url, // signed url (reliable)
-        publicUrl: result.publicUrl, // optional
+        url: result.url,
+        publicUrl: result.publicUrl,
         fileName: result.fileName,
         mediaType: result.mediaType,
       },
@@ -169,7 +175,6 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const { message, details } = toErrorPayload(err);
 
-    // treat validation/env issues as 400/500 appropriately
     const status =
       message.startsWith("File ") ||
       message.startsWith("Missing environment variables")

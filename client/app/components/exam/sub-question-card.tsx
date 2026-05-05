@@ -5,9 +5,11 @@ import he from "he";
 import { RichTextEditor } from "../rich-text-editor";
 import { GraphAnswerEditor } from "./graph-answer";
 import { DrawingAnswerEditor } from "./drawing-answer";
+import { ImageCompositionAnswerEditor } from "./image-composition-answer";
 import { CircuitAnswerEditor } from "./circuit-answer";
 import { TableAnswerEditor } from "./table-answer";
 import type { CircuitTemplate } from "@/lib/circuit-template";
+import type { ImageCompositionTemplate } from "@/lib/image-composition-template";
 
 interface SubQuestionCardProps {
   questionPosition: number;
@@ -22,6 +24,7 @@ interface SubQuestionCardProps {
     }>;
   } | null;
   circuitTemplate?: CircuitTemplate | null;
+  imageCompositionTemplate?: ImageCompositionTemplate | null;
   answer: string;
   onAnswerChange: (value: string) => void;
   subQuestionId: string;
@@ -47,6 +50,7 @@ export const SubQuestionCard = memo(function SubQuestionCard({
   questionType,
   mcqOptions,
   circuitTemplate,
+  imageCompositionTemplate,
   answer,
   onAnswerChange,
   subQuestionId,
@@ -55,6 +59,7 @@ export const SubQuestionCard = memo(function SubQuestionCard({
   const isMCQ = questionType === "MCQ" && mcqOptions;
   const isGraph = questionType === "GRAPH";
   const isDrawing = questionType === "DRAWING";
+  const isImageComposition = questionType === "IMAGE_COMPOSITION";
   const isTable = questionType === "TABLE";
   const isCircuit = questionType === "CIRCUIT";
 
@@ -120,6 +125,13 @@ export const SubQuestionCard = memo(function SubQuestionCard({
             value={answer}
             onChange={onAnswerChange}
             readonly={readonly}
+          />
+        ) : isImageComposition ? (
+          <ImageCompositionAnswerEditor
+            value={answer}
+            onChange={onAnswerChange}
+            readonly={readonly}
+            template={imageCompositionTemplate}
           />
         ) : isCircuit ? (
           <CircuitAnswerEditor

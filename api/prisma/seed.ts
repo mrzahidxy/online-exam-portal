@@ -12,6 +12,7 @@ const prisma = new PrismaClient();
 const GRAPH_QUESTION_TYPE = 'GRAPH';
 const TABLE_QUESTION_TYPE = 'TABLE';
 const CIRCUIT_QUESTION_TYPE = 'CIRCUIT';
+const IMAGE_COMPOSITION_QUESTION_TYPE = 'IMAGE_COMPOSITION';
 const DESCRIPTIVE_QUESTION_TYPE = 'DESCRIPTIVE';
 const SAMPLE_GRAPH_ANSWER = JSON.stringify({
   version: 1,
@@ -59,6 +60,83 @@ const SAMPLE_CIRCUIT_TEMPLATE = {
   bulb: { x: 582, y: 160 },
 };
 
+const createSampleImageDataUri = (label: string, fill: string, accent: string) =>
+  `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160"><rect width="240" height="160" rx="20" fill="${fill}"/><circle cx="72" cy="72" r="24" fill="${accent}" opacity="0.35"/><rect x="126" y="40" width="72" height="72" rx="18" fill="${accent}" opacity="0.25"/><text x="120" y="94" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="${accent}">${label}</text></svg>`
+  )}`;
+
+const SAMPLE_IMAGE_COMPOSITION_BACKGROUND = createSampleImageDataUri(
+  'BG',
+  '#f8fafc',
+  '#0f172a'
+);
+
+const SAMPLE_IMAGE_COMPOSITION_TEMPLATE = {
+  version: 1,
+  canvas: {
+    width: 960,
+    height: 540,
+    backgroundColor: '#ffffff',
+  },
+  backgroundImage: {
+    src: SAMPLE_IMAGE_COMPOSITION_BACKGROUND,
+    name: 'Reference background',
+    width: 960,
+    height: 540,
+    fit: 'cover',
+  },
+  assets: [
+    {
+      id: 'asset-1',
+      src: createSampleImageDataUri('A', '#dbeafe', '#1d4ed8'),
+      name: 'Layer A',
+      x: 120,
+      y: 96,
+      width: 220,
+      height: 150,
+      zIndex: 0,
+    },
+    {
+      id: 'asset-2',
+      src: createSampleImageDataUri('B', '#fef3c7', '#b45309'),
+      name: 'Layer B',
+      x: 320,
+      y: 184,
+      width: 220,
+      height: 150,
+      zIndex: 1,
+    },
+  ],
+};
+
+const SAMPLE_IMAGE_COMPOSITION_ANSWER = JSON.stringify({
+  version: 1,
+  type: 'image-composition',
+  canvas: {
+    width: 960,
+    height: 540,
+    backgroundColor: '#ffffff',
+  },
+  placements: [
+    {
+      assetId: 'asset-1',
+      x: 128,
+      y: 96,
+      width: 220,
+      height: 150,
+      zIndex: 0,
+    },
+    {
+      assetId: 'asset-2',
+      x: 332,
+      y: 182,
+      width: 220,
+      height: 150,
+      zIndex: 1,
+    },
+  ],
+});
+
 type CircuitTemplateSeed = typeof SAMPLE_CIRCUIT_TEMPLATE;
 
 type SubQuestionSeed = {
@@ -66,8 +144,9 @@ type SubQuestionSeed = {
   question: string;
   marks: number;
   position: number;
-  questionType?: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT';
+  questionType?: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT' | 'DRAWING' | 'IMAGE_COMPOSITION';
   circuitTemplate?: CircuitTemplateSeed;
+  imageCompositionTemplate?: typeof SAMPLE_IMAGE_COMPOSITION_TEMPLATE;
 };
 
 type QuestionSeed = {
@@ -196,6 +275,7 @@ async function upsertSubQuestion(questionId: string, seed: SubQuestionSeed) {
       marks: seed.marks,
       questionType: (seed.questionType ?? DESCRIPTIVE_QUESTION_TYPE) as any,
       circuitTemplate: seed.circuitTemplate ?? undefined,
+      imageCompositionTemplate: seed.imageCompositionTemplate ?? undefined,
     },
     create: {
       questionId,
@@ -205,6 +285,7 @@ async function upsertSubQuestion(questionId: string, seed: SubQuestionSeed) {
       position: seed.position,
       questionType: (seed.questionType ?? DESCRIPTIVE_QUESTION_TYPE) as any,
       circuitTemplate: seed.circuitTemplate ?? undefined,
+      imageCompositionTemplate: seed.imageCompositionTemplate ?? undefined,
     },
   });
 }
@@ -325,14 +406,17 @@ async function seedSubmissionAnswersAndGrades({
   }
 
   for (const subQuestion of subQuestions) {
-    const answerText =
-      subQuestion.questionType === GRAPH_QUESTION_TYPE
-        ? SAMPLE_GRAPH_ANSWER
-        : subQuestion.questionType === TABLE_QUESTION_TYPE
-          ? SAMPLE_TABLE_ANSWER
-          : subQuestion.questionType === CIRCUIT_QUESTION_TYPE
-            ? SAMPLE_CIRCUIT_ANSWER
-        : `Sample answer for ${subQuestion.label}`;
+    let answerText = `Sample answer for ${subQuestion.label}`;
+
+    if (subQuestion.questionType === GRAPH_QUESTION_TYPE) {
+      answerText = SAMPLE_GRAPH_ANSWER;
+    } else if (subQuestion.questionType === TABLE_QUESTION_TYPE) {
+      answerText = SAMPLE_TABLE_ANSWER;
+    } else if (subQuestion.questionType === CIRCUIT_QUESTION_TYPE) {
+      answerText = SAMPLE_CIRCUIT_ANSWER;
+    } else if (subQuestion.questionType === IMAGE_COMPOSITION_QUESTION_TYPE) {
+      answerText = SAMPLE_IMAGE_COMPOSITION_ANSWER;
+    }
 
     await prisma.answer.upsert({
       where: {
@@ -481,6 +565,22 @@ async function main() {
             position: 1,
             questionType: CIRCUIT_QUESTION_TYPE,
             circuitTemplate: SAMPLE_CIRCUIT_TEMPLATE,
+          },
+        ],
+      },
+      {
+        position: 6,
+        contentHtml:
+          '<p>Arrange the provided images into a layered composition on the canvas.</p>',
+        marks: 10,
+        subQuestions: [
+          {
+            label: 'a',
+            question: 'Drag, resize, and layer the images to match the reference layout',
+            marks: 10,
+            position: 1,
+            questionType: IMAGE_COMPOSITION_QUESTION_TYPE,
+            imageCompositionTemplate: SAMPLE_IMAGE_COMPOSITION_TEMPLATE,
           },
         ],
       },

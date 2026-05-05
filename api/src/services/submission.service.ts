@@ -47,6 +47,7 @@ const submissionPaperSelect = {
           questionType: true,
           mcqOptions: true,
           circuitTemplate: true,
+          imageCompositionTemplate: true,
           position: true,
         },
       },
@@ -78,6 +79,7 @@ const submissionInclude = {
           questionType: true,
           mcqOptions: true,
           circuitTemplate: true,
+          imageCompositionTemplate: true,
           position: true,
           questionRel: {
             select: {
