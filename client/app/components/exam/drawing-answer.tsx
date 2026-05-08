@@ -1,7 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { ArrowRight, Circle, Eraser, Minus, PencilLine, Redo2, Square, Trash2, Undo2 } from "lucide-react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
+import {
+  ArrowRight,
+  Circle,
+  Eraser,
+  Minus,
+  PencilLine,
+  Redo2,
+  Square,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   createDefaultDrawingAnswer,
@@ -28,27 +45,35 @@ type DrawingAnswerProps = {
 
 type DrawingDraft =
   | {
-      kind: "freehand";
-      points: DrawingPoint[];
-    }
+    kind: "freehand";
+    points: DrawingPoint[];
+  }
   | {
-      kind: "line" | "rectangle" | "circle" | "arrow";
-      from: DrawingPoint;
-      to: DrawingPoint;
-    };
+    kind: "line" | "rectangle" | "circle" | "arrow";
+    from: DrawingPoint;
+    to: DrawingPoint;
+  };
 
 const TOOL_OPTIONS: Array<{
   value: DrawingTool;
   label: string;
   icon: ReactNode;
 }> = [
-  { value: "freehand", label: "Freehand", icon: <PencilLine className="h-4 w-4" /> },
-  { value: "line", label: "Line", icon: <Minus className="h-4 w-4" /> },
-  { value: "rectangle", label: "Rectangle", icon: <Square className="h-4 w-4" /> },
-  { value: "circle", label: "Circle", icon: <Circle className="h-4 w-4" /> },
-  { value: "arrow", label: "Arrow", icon: <ArrowRight className="h-4 w-4" /> },
-  { value: "eraser", label: "Eraser", icon: <Eraser className="h-4 w-4" /> },
-];
+    {
+      value: "freehand",
+      label: "Freehand",
+      icon: <PencilLine className="h-4 w-4" />,
+    },
+    { value: "line", label: "Line", icon: <Minus className="h-4 w-4" /> },
+    {
+      value: "rectangle",
+      label: "Rectangle",
+      icon: <Square className="h-4 w-4" />,
+    },
+    { value: "circle", label: "Circle", icon: <Circle className="h-4 w-4" /> },
+    { value: "arrow", label: "Arrow", icon: <ArrowRight className="h-4 w-4" /> },
+    { value: "eraser", label: "Eraser", icon: <Eraser className="h-4 w-4" /> },
+  ];
 
 const MIN_WIDTH = 1;
 const MAX_WIDTH = 18;
@@ -64,7 +89,7 @@ const asNumber = (value: number) => Math.round(value);
 
 const normalizePoint = (
   point: DrawingPoint,
-  canvas: DrawingAnswerData["canvas"]
+  canvas: DrawingAnswerData["canvas"],
 ) => ({
   x: clamp(asNumber(point.x), 0, canvas.width),
   y: clamp(asNumber(point.y), 0, canvas.height),
@@ -73,7 +98,7 @@ const normalizePoint = (
 const getCanvasPoint = (
   event: ReactPointerEvent<SVGSVGElement>,
   svg: SVGSVGElement,
-  canvas: DrawingAnswerData["canvas"]
+  canvas: DrawingAnswerData["canvas"],
 ) => {
   const rect = svg.getBoundingClientRect();
   const x = ((event.clientX - rect.left) / rect.width) * canvas.width;
@@ -81,13 +106,18 @@ const getCanvasPoint = (
   return normalizePoint(createPoint(x, y), canvas);
 };
 
-const isShapeTool = (kind: DrawingTool): kind is "line" | "rectangle" | "circle" | "arrow" =>
-  kind === "line" || kind === "rectangle" || kind === "circle" || kind === "arrow";
+const isShapeTool = (
+  kind: DrawingTool,
+): kind is "line" | "rectangle" | "circle" | "arrow" =>
+  kind === "line" ||
+  kind === "rectangle" ||
+  kind === "circle" ||
+  kind === "arrow";
 
 const buildArrowHead = (
   from: DrawingPoint,
   to: DrawingPoint,
-  strokeWidth: number
+  strokeWidth: number,
 ) => {
   const angle = Math.atan2(to.y - from.y, to.x - from.x);
   const size = Math.max(10, strokeWidth * 3);
@@ -185,7 +215,7 @@ const renderElement = (element: DrawingElement) => {
 const renderDraft = (
   draft: DrawingDraft,
   color: string,
-  strokeWidth: number
+  strokeWidth: number,
 ) => {
   if (draft.kind === "freehand") {
     return (
@@ -460,9 +490,7 @@ export function DrawingAnswerEditor({
       return;
     }
 
-    setDraft((current) =>
-      current ? { ...current, to: point } : current
-    );
+    setDraft((current) => (current ? { ...current, to: point } : current));
   };
 
   const handlePointerUp = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -494,21 +522,21 @@ export function DrawingAnswerEditor({
 
   const renderedElements = useMemo(
     () => drawing.elements.map((element) => ({ element })),
-    [drawing.elements]
+    [drawing.elements],
   );
 
   return (
-    <div className={className ?? "space-y-3"}>
+    <div className={className ?? "space-y-2"}>
       {!readonly && (
-        <div className="space-y-3 rounded-lg border border-border bg-slate-50 p-3">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="w-full space-y-2 rounded-md border border-border bg-slate-50 p-2">
+          <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto rounded-md border border-border bg-white p-1">
             {TOOL_OPTIONS.map((option) => (
               <Button
                 key={option.value}
                 type="button"
                 size="sm"
                 variant={tool === option.value ? "default" : "outline"}
-                className="h-9 w-9 p-0"
+                className="h-7 w-7 shrink-0 p-0"
                 onClick={() => setTool(option.value)}
                 title={option.label}
                 aria-label={option.label}
@@ -520,78 +548,77 @@ export function DrawingAnswerEditor({
               type="button"
               size="sm"
               variant="outline"
-              className="h-9 w-9 p-0"
+              className="h-7 w-7 shrink-0 p-0"
               onClick={undo}
               disabled={!canUndo}
               title="Undo"
               aria-label="Undo"
             >
-              <Undo2 className="h-4 w-4" />
+              <Undo2 className="h-3 w-3 shrink-0" />
             </Button>
             <Button
               type="button"
               size="sm"
               variant="outline"
-              className="h-9 w-9 p-0"
+              className="h-7 w-7 shrink-0 p-0"
               onClick={redo}
               disabled={!canRedo}
               title="Redo"
               aria-label="Redo"
             >
-              <Redo2 className="h-4 w-4" />
+              <Redo2 className="h-3 w-3 shrink-0" />
             </Button>
             <Button
               type="button"
               size="sm"
               variant="outline"
-              className="h-9 w-9 p-0 text-red-600 hover:text-red-700"
+              className="h-7 w-7 shrink-0 p-0 text-red-600 hover:text-red-700"
               onClick={clearCanvas}
               title="Clear canvas"
               aria-label="Clear canvas"
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="h-3 w-3 shrink-0" />
             </Button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-            <label className="flex items-center gap-2">
-              <span className="font-medium text-foreground">Color</span>
+            <div className="flex h-7 shrink-0 items-center gap-1 rounded border border-border bg-slate-50 px-1.5">
               <input
                 type="color"
                 value={strokeColor}
                 onChange={(event) => setStrokeColor(event.target.value)}
-                className="h-8 w-10 cursor-pointer rounded border border-border bg-white p-1"
+                className="h-4 w-7 cursor-pointer rounded border border-border bg-white p-0"
+                aria-label="Color picker"
+                title="Color picker"
               />
-            </label>
-
-            <label className="flex items-center gap-2">
-              <span className="font-medium text-foreground">Stroke</span>
+            </div>
+            <div className="flex h-7 shrink-0 items-center gap-1 rounded border border-border bg-slate-50 px-1.5">
               <input
                 type="range"
                 min={MIN_WIDTH}
                 max={MAX_WIDTH}
                 value={strokeWidth}
                 onChange={(event) => setStrokeWidth(Number(event.target.value))}
-                className="w-28"
+                className="w-20"
+                aria-label="Stroke width"
+                title="Stroke width"
               />
-              <span className="tabular-nums text-foreground">{strokeWidth}px</span>
-            </label>
+              <span className="min-w-7 text-[10px] tabular-nums text-foreground">
+                {strokeWidth}px
+              </span>
+            </div>
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            Freehand, lines, rectangles, circles, and arrows are stored as structured JSON. Use eraser to remove the last hit element.
+          <p className="text-[11px] leading-tight text-muted-foreground">
+            Freehand, lines, rectangles, circles, and arrows are stored as JSON.
+            Use eraser to remove the last hit element.
           </p>
         </div>
       )}
 
-      <div className="overflow-x-auto">
-        <div className="inline-block rounded-lg border border-border bg-white shadow-sm">
+      <div className="w-full overflow-x-auto rounded-md border border-border bg-white shadow-sm">
+        <div className="min-w-[720px]">
           <svg
             ref={svgRef}
             viewBox={`0 0 ${canvas.width} ${canvas.height}`}
-            className={`block h-[360px] w-full min-w-[720px] ${
-              canEdit ? "cursor-crosshair touch-none" : ""
-            }`}
+            className={`block h-[360px] w-full ${canEdit ? "cursor-crosshair touch-none" : ""}`}
             role="img"
             aria-label="Drawing answer canvas"
             onPointerDown={handlePointerDown}
@@ -600,13 +627,35 @@ export function DrawingAnswerEditor({
             onPointerCancel={handlePointerCancel}
           >
             <defs>
-              <pattern id="drawing-grid" width="24" height="24" patternUnits="userSpaceOnUse">
-                <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e2e8f0" strokeWidth="1" />
+              <pattern
+                id="drawing-grid"
+                width="24"
+                height="24"
+                patternUnits="userSpaceOnUse"
+              >
+                <path
+                  d="M 24 0 L 0 0 0 24"
+                  fill="none"
+                  stroke="#e2e8f0"
+                  strokeWidth="1"
+                />
               </pattern>
             </defs>
 
-            <rect x="0" y="0" width={canvas.width} height={canvas.height} fill="#f8fafc" />
-            <rect x="0" y="0" width={canvas.width} height={canvas.height} fill="url(#drawing-grid)" />
+            <rect
+              x="0"
+              y="0"
+              width={canvas.width}
+              height={canvas.height}
+              fill="#f8fafc"
+            />
+            <rect
+              x="0"
+              y="0"
+              width={canvas.width}
+              height={canvas.height}
+              fill="url(#drawing-grid)"
+            />
 
             {renderedElements.map(({ element }) => (
               <g key={element.id}>{renderElement(element)}</g>
@@ -628,7 +677,9 @@ export function DrawingAnswerEditor({
 
       <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
         <div>Elements: {elementCount}</div>
-        <div>Canvas: {canvas.width} x {canvas.height}</div>
+        <div>
+          Canvas: {canvas.width} x {canvas.height}
+        </div>
         <div>Mode: {readonly ? "view only" : tool}</div>
       </div>
     </div>

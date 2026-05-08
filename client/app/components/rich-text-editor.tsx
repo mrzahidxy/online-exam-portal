@@ -135,7 +135,6 @@ export function RichTextEditor({
             "fullscreen",
             "insertdatetime",
             "media",
-            "table",
             "help",
             "wordcount",
           ],
@@ -144,8 +143,8 @@ export function RichTextEditor({
           valid_children: "+body[iframe]",
           toolbar: `${
             isStudentView
-              ? "styles | bold italic underline | subscript superscript | bullist numlist | table | insertcalc | undo redo"
-              : "styles | bold italic underline | subscript superscript | bullist numlist | table | image media | undo redo"
+              ? "styles | bold italic underline | subscript superscript | bullist numlist | insertcalc | undo redo"
+              : "styles | bold italic underline | subscript superscript | bullist numlist | image media | undo redo"
           }`,
           toolbar_mode: "sliding",
           content_style: `

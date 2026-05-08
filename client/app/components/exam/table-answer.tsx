@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { Button } from "@/components/ui/button";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
+import { Plus } from "lucide-react";
 
 type TableCell = string;
 
@@ -20,6 +21,9 @@ type TableAnswerProps = {
 
 const DEFAULT_ROWS = 1;
 const DEFAULT_COLS = 1;
+const MAX_TABLE_SIZE = 6;
+const CELL_WIDTH = 84;
+const CELL_HEIGHT = 36;
 
 const DEFAULT_VALUE: TableAnswerData = {
   version: 1,
@@ -28,6 +32,9 @@ const DEFAULT_VALUE: TableAnswerData = {
     Array.from({ length: DEFAULT_COLS }, () => "")
   ),
 };
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
 
 const normalizeRows = (rows: unknown): TableCell[][] => {
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -49,8 +56,23 @@ const normalizeRows = (rows: unknown): TableCell[][] => {
   ]);
 };
 
-const createEmptyRow = (columns: number) =>
-  Array.from({ length: Math.max(columns, 1) }, () => "");
+const resizeTableRows = (
+  rows: TableCell[][],
+  nextRowCount: number,
+  nextColCount: number
+) => {
+  const rowCount = Math.max(nextRowCount, 1);
+  const colCount = Math.max(nextColCount, 1);
+
+  return Array.from({ length: rowCount }, (_, rowIndex) => {
+    const sourceRow = rows[rowIndex] ?? [];
+    const nextRow = sourceRow.slice(0, colCount);
+    return [
+      ...nextRow,
+      ...Array.from({ length: colCount - nextRow.length }, () => ""),
+    ];
+  });
+};
 
 export const serializeTableAnswer = (data: TableAnswerData) =>
   JSON.stringify(data);
@@ -79,17 +101,100 @@ export function TableAnswerEditor({
   className,
 }: TableAnswerProps) {
   const [table, setTable] = useState<TableAnswerData>(() => parseTableAnswer(value));
+  const [draftSize, setDraftSize] = useState({
+    rows: table.rows.length,
+    cols: table.rows[0]?.length ?? DEFAULT_COLS,
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const draftSizeRef = useRef(draftSize);
 
   const canEdit = !readonly && typeof onChange === "function";
 
   useEffect(() => {
-    setTable(parseTableAnswer(value));
+    const nextTable = parseTableAnswer(value);
+    const nextSize = {
+      rows: nextTable.rows.length,
+      cols: nextTable.rows[0]?.length ?? DEFAULT_COLS,
+    };
+
+    setTable(nextTable);
+    setDraftSize(nextSize);
+    draftSizeRef.current = nextSize;
   }, [value]);
 
-  const emitChange = (next: TableAnswerData) => {
-    setTable(next);
-    onChange?.(serializeTableAnswer(next));
-  };
+  useEffect(() => {
+    draftSizeRef.current = draftSize;
+  }, [draftSize]);
+
+  const commitSize = useCallback(
+    (nextRows: number, nextCols: number) => {
+      const clampedRows = clamp(nextRows, 1, MAX_TABLE_SIZE);
+      const clampedCols = clamp(nextCols, 1, MAX_TABLE_SIZE);
+
+      setTable((currentTable) => {
+        const nextTable = {
+          ...currentTable,
+          rows: resizeTableRows(currentTable.rows, clampedRows, clampedCols),
+        };
+        onChange?.(serializeTableAnswer(nextTable));
+        return nextTable;
+      });
+
+      setDraftSize({ rows: clampedRows, cols: clampedCols });
+      draftSizeRef.current = { rows: clampedRows, cols: clampedCols };
+    },
+    [onChange]
+  );
+
+  useEffect(() => {
+    if (!isResizing || readonly) return;
+
+    let didCommit = false;
+
+    const updateDraftFromPoint = (clientX: number, clientY: number) => {
+      const rect = wrapperRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const nextCols = clamp(
+        Math.ceil((clientX - rect.left) / CELL_WIDTH),
+        1,
+        MAX_TABLE_SIZE
+      );
+      const nextRows = clamp(
+        Math.ceil((clientY - rect.top) / CELL_HEIGHT),
+        1,
+        MAX_TABLE_SIZE
+      );
+
+      const nextSize = { rows: nextRows, cols: nextCols };
+      setDraftSize(nextSize);
+      draftSizeRef.current = nextSize;
+    };
+
+    const finishResize = () => {
+      if (didCommit) return;
+      didCommit = true;
+
+      const nextSize = draftSizeRef.current;
+      commitSize(nextSize.rows, nextSize.cols);
+      setIsResizing(false);
+    };
+
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      updateDraftFromPoint(event.clientX, event.clientY);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", finishResize);
+    window.addEventListener("pointercancel", finishResize);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", finishResize);
+      window.removeEventListener("pointercancel", finishResize);
+    };
+  }, [isResizing, readonly, commitSize]);
 
   const updateCell = (rowIndex: number, colIndex: number, cellValue: string) => {
     const nextRows = table.rows.map((row, rIdx) =>
@@ -97,92 +202,108 @@ export function TableAnswerEditor({
         ? row.map((cell, cIdx) => (cIdx === colIndex ? cellValue : cell))
         : row
     );
+
     const nextTable = { ...table, rows: nextRows };
-    const isBottomRight =
-      rowIndex === table.rows.length - 1 &&
-      colIndex === (table.rows[rowIndex]?.length ?? 1) - 1;
-
-    if (isBottomRight && cellValue.trim().length > 0) {
-      nextTable.rows = [
-        ...nextTable.rows,
-        createEmptyRow(nextTable.rows[0]?.length ?? DEFAULT_COLS),
-      ].map((row) => [...row, ""]);
-    }
-
-    emitChange(nextTable);
+    setTable(nextTable);
+    onChange?.(serializeTableAnswer(nextTable));
   };
 
-  const addRow = () => {
-    emitChange({
-      ...table,
-      rows: [...table.rows, Array.from({ length: table.rows[0]?.length ?? DEFAULT_COLS }, () => "")],
-    });
-  };
-
-  const removeRow = () => {
-    if (table.rows.length <= 1) return;
-    emitChange({ ...table, rows: table.rows.slice(0, -1) });
-  };
-
-  const addColumn = () => {
-    emitChange({
-      ...table,
-      rows: table.rows.map((row) => [...row, ""]),
-    });
-  };
-
-  const removeColumn = () => {
-    const colCount = table.rows[0]?.length ?? 0;
-    if (colCount <= 1) return;
-    emitChange({
-      ...table,
-      rows: table.rows.map((row) => row.slice(0, -1)),
-    });
-  };
-
-  const handleKeyDown = (
-    event: KeyboardEvent<HTMLInputElement>,
-    rowIndex: number,
-    colIndex: number
-  ) => {
+  const startResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (!canEdit) return;
 
-    if ((event.key === "Tab" || event.key === "Enter") && rowIndex === table.rows.length - 1 && colIndex === (table.rows[rowIndex]?.length ?? 1) - 1) {
-      event.preventDefault();
-      addRow();
-      addColumn();
-    }
+    event.preventDefault();
+    const nextSize = {
+      rows: table.rows.length,
+      cols: table.rows[0]?.length ?? DEFAULT_COLS,
+    };
+    setDraftSize(nextSize);
+    draftSizeRef.current = nextSize;
+    setIsResizing(true);
+  };
+
+  const handleManualRowsChange = (event: ChangeEvent<HTMLInputElement>) => {
+    commitSize(Number(event.target.value || 1), draftSize.cols);
+    setIsResizing(false);
+  };
+
+  const handleManualColsChange = (event: ChangeEvent<HTMLInputElement>) => {
+    commitSize(draftSize.rows, Number(event.target.value || 1));
+    setIsResizing(false);
   };
 
   const rowCount = table.rows.length;
   const colCount = table.rows[0]?.length ?? 0;
+  const activeRows = isResizing ? draftSize.rows : rowCount;
+  const activeCols = isResizing ? draftSize.cols : colCount;
+  const renderedRows = useMemo(
+    () => resizeTableRows(table.rows, activeRows, activeCols),
+    [table.rows, activeRows, activeCols]
+  );
 
   return (
-    <div className={className ?? "space-y-3"}>
-      {!readonly && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={addRow}>
-            Add Row
-          </Button>
-          <Button type="button" size="sm" variant="outline" onClick={removeRow}>
-            Remove Row
-          </Button>
-          <Button type="button" size="sm" variant="outline" onClick={addColumn}>
-            Add Column
-          </Button>
-          <Button type="button" size="sm" variant="outline" onClick={removeColumn}>
-            Remove Column
-          </Button>
+    <div className={className ?? "space-y-2"}>
+      {canEdit && (
+        <div className="rounded-md border border-border bg-muted/20 p-2 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-medium text-foreground">Size table</p>
+              <p className="text-[11px] text-muted-foreground">
+                Drag + or type rows and cols.
+              </p>
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              {activeRows} x {activeCols}
+            </div>
+          </div>
+
+          <div className="grid gap-1.5 sm:grid-cols-2">
+            <label className="flex items-center gap-2">
+              <span className="min-w-12 text-[11px] font-medium text-foreground">
+                Rows
+              </span>
+              <input
+                type="number"
+                min={1}
+                max={MAX_TABLE_SIZE}
+                step={1}
+                value={activeRows}
+                onChange={handleManualRowsChange}
+                className="h-8 w-full rounded-md border border-border bg-white px-2 text-[11px] outline-none"
+              />
+            </label>
+
+            <label className="flex items-center gap-2">
+              <span className="min-w-12 text-[11px] font-medium text-foreground">
+                Columns
+              </span>
+              <input
+                type="number"
+                min={1}
+                max={MAX_TABLE_SIZE}
+                step={1}
+                value={activeCols}
+                onChange={handleManualColsChange}
+                className="h-8 w-full rounded-md border border-border bg-white px-2 text-[11px] outline-none"
+              />
+            </label>
+          </div>
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-border bg-white shadow-sm">
-        <table className="w-full border-collapse">
+      <div
+        ref={wrapperRef}
+        className="relative overflow-x-auto rounded-md border border-border bg-white shadow-sm"
+      >
+        <table className="w-full border-collapse table-fixed">
           <tbody>
-            {table.rows.map((row, rowIndex) => (
+            {renderedRows.map((row, rowIndex) => (
               <tr key={rowIndex}>
                 {row.map((cell, colIndex) => (
-                  <td key={`${rowIndex}-${colIndex}`} className="border border-border p-0">
+                  <td
+                    key={`${rowIndex}-${colIndex}`}
+                    className="border border-border p-0 align-top"
+                    style={{ width: CELL_WIDTH, minWidth: CELL_WIDTH }}
+                  >
                     {canEdit ? (
                       <input
                         type="text"
@@ -190,13 +311,12 @@ export function TableAnswerEditor({
                         onChange={(event: ChangeEvent<HTMLInputElement>) =>
                           updateCell(rowIndex, colIndex, event.target.value)
                         }
-                        onKeyDown={(event) => handleKeyDown(event, rowIndex, colIndex)}
-                        className="w-full min-w-24 bg-transparent px-3 py-2 text-sm outline-none"
+                        className="h-9 w-full bg-transparent px-2.5 text-xs outline-none"
                         placeholder={`R${rowIndex + 1}C${colIndex + 1}`}
                       />
                     ) : (
-                      <div className="min-h-11 min-w-24 px-3 py-2 text-sm text-foreground">
-                        {cell || <span className="text-muted-foreground">—</span>}
+                      <div className="flex h-9 items-center px-2.5 text-xs text-foreground">
+                        {cell || <span className="text-muted-foreground">-</span>}
                       </div>
                     )}
                   </td>
@@ -205,9 +325,20 @@ export function TableAnswerEditor({
             ))}
           </tbody>
         </table>
+
+        {canEdit && (
+          <button
+            type="button"
+            onPointerDown={startResize}
+            className="absolute -right-1.5 -bottom-1.5 inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-white text-foreground shadow-md transition hover:bg-muted active:scale-95 cursor-grab touch-none"
+            aria-label="Drag to size the table"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
         <span>Rows: {rowCount}</span>
         <span>Columns: {colCount}</span>
         <span>Mode: {readonly ? "view only" : "spreadsheet table"}</span>
