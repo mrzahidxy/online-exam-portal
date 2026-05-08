@@ -40,6 +40,10 @@ const SECURITY_VIOLATION_LABELS: Record<SecurityViolationType, string> = {
 };
 
 const POST_UNLOCK_GRACE_MS = 2500;
+const PROGRESSIVE_PENALTY_STEP_MINUTES = 10;
+const INITIAL_TIME_REMAINING_SECONDS = Number(
+  process.env.NEXT_PUBLIC_EXAM_INITIAL_BUFFER_SECONDS || 120
+);
 
 // Helper to strip HTML tags for answer validation
 function stripHtml(html: string): string {
@@ -65,6 +69,14 @@ function shouldRespectPostUnlockGrace(violationType: SecurityViolationType) {
   );
 }
 
+function shouldApplyProgressivePenalty(violationType: SecurityViolationType) {
+  return (
+    violationType === "FULLSCREEN_EXIT" ||
+    violationType === "WINDOW_SWITCH" ||
+    violationType === "ALT_TAB"
+  );
+}
+
 function shouldIgnoreDuringUnlockTransition(
   violationType: SecurityViolationType
 ) {
@@ -73,6 +85,10 @@ function shouldIgnoreDuringUnlockTransition(
     violationType === "WINDOW_SWITCH" ||
     violationType === "DEVTOOLS"
   );
+}
+
+function getProgressivePenaltySeconds(violationCount: number) {
+  return violationCount * PROGRESSIVE_PENALTY_STEP_MINUTES * 60;
 }
 
 export default function StudentAssessment({
@@ -84,12 +100,13 @@ export default function StudentAssessment({
 
   // Normalized state: answers keyed by subQuestionId (stable UUID)
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [timeRemaining, setTimeRemaining] = useState(120); // Start with 2 minutes buffer
+  const [timeRemaining, setTimeRemaining] = useState<number>(
+    INITIAL_TIME_REMAINING_SECONDS || 120
+  );
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string>("");
-  const [examStartTime] = useState<Date>(new Date());
   const [isInBufferPeriod, setIsInBufferPeriod] = useState(true);
   const [hasStartedExam, setHasStartedExam] = useState(false);
   const [isExamLocked, setIsExamLocked] = useState(false);
@@ -104,6 +121,7 @@ export default function StudentAssessment({
   const { create } = useSubmissionMutations();
   const lastUnlockAtRef = useRef<number>(0);
   const isUnlockTransitionRef = useRef(false);
+  const progressivePenaltyCountRef = useRef(0);
 
   const lockExam = useCallback(
     (violationType: SecurityViolationType, details?: string) => {
@@ -123,6 +141,15 @@ export default function StudentAssessment({
         Date.now() - lastUnlockAtRef.current < POST_UNLOCK_GRACE_MS
       ) {
         return;
+      }
+
+      if (shouldApplyProgressivePenalty(violationType)) {
+        progressivePenaltyCountRef.current += 1;
+        const penaltySeconds = getProgressivePenaltySeconds(
+          progressivePenaltyCountRef.current
+        );
+
+        setTimeRemaining((prev) => Math.max(0, prev - penaltySeconds));
       }
 
       setLockReason(violationType);
@@ -237,7 +264,7 @@ export default function StudentAssessment({
 
   // Unified timer countdown (buffer period then exam period)
   useEffect(() => {
-    if (submitted) return;
+    if (submitted || !hasStartedExam) return;
 
     const timer = window.setInterval(() => {
       setTimeRemaining((prev) => {
@@ -258,7 +285,7 @@ export default function StudentAssessment({
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [submitted, isInBufferPeriod, paper]);
+  }, [submitted, hasStartedExam, isInBufferPeriod, paper]);
 
   // Security: Detect and block copy/paste shortcuts
   useEffect(() => {
@@ -539,14 +566,6 @@ export default function StudentAssessment({
         },
       }
     );
-  };
-
-  const formatTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${minutes.toString().padStart(2, "0")}:${secs
-      .toString()
-      .padStart(2, "0")}`;
   };
 
   // Track answered status separately to avoid recomputing navigation on every keystroke
