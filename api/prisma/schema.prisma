@@ -138,6 +138,13 @@ model Grade {
   @@unique([submissionId, subQuestionId])
 }
 
+model ExamSecurityConfig {
+  id             String   @id
+  unlockCodeHash String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
 enum UserRole {
   STUDENT
   ADMIN

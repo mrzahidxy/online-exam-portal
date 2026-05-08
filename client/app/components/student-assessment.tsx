@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { KeyRound, Lock, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Send } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { useSubmissionMutations } from "@/hooks/mutations/useSubmissionMutations";
 import { usePaper } from "@/hooks/queries/usePaper";
 import { useAuthStore } from "@/lib/auth-store";
+import { backendApiFetch } from "@/lib/api-client";
 import { TopAppBar } from "./exam/top-app-bar";
 import { QuestionCard } from "./exam/question-card";
 import { RightNavigator } from "./exam/right-navigator";
@@ -16,11 +18,77 @@ type StudentAssessmentProps = {
   assessmentId: string;
 };
 
-const DEFAULT_READING_TIME_SECONDS = 60;
+type SecurityViolationType =
+  | "COPY_SHORTCUT"
+  | "PASTE_SHORTCUT"
+  | "CUT_SHORTCUT"
+  | "ALT_TAB"
+  | "WINDOW_SWITCH"
+  | "FULLSCREEN_EXIT"
+  | "DEVTOOLS"
+  | "KEYBOARD_SHORTCUT";
+
+const SECURITY_VIOLATION_LABELS: Record<SecurityViolationType, string> = {
+  COPY_SHORTCUT: "Copy shortcut detected",
+  PASTE_SHORTCUT: "Paste shortcut detected",
+  CUT_SHORTCUT: "Cut shortcut detected",
+  ALT_TAB: "Alt+Tab detected",
+  WINDOW_SWITCH: "Window switch detected",
+  FULLSCREEN_EXIT: "Fullscreen exit detected",
+  DEVTOOLS: "Developer tools detected",
+  KEYBOARD_SHORTCUT: "Blocked keyboard shortcut detected",
+};
+
+const POST_UNLOCK_GRACE_MS = 2500;
+const PROGRESSIVE_PENALTY_STEP_MINUTES = 10;
+const INITIAL_TIME_REMAINING_SECONDS = Number(
+  process.env.NEXT_PUBLIC_EXAM_INITIAL_BUFFER_SECONDS || 120
+);
 
 // Helper to strip HTML tags for answer validation
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ");
+}
+
+function getSecurityViolationMessage(
+  violationType: SecurityViolationType,
+  details?: string
+) {
+  if (!details) {
+    return SECURITY_VIOLATION_LABELS[violationType];
+  }
+
+  return `${SECURITY_VIOLATION_LABELS[violationType]}: ${details}`;
+}
+
+function shouldRespectPostUnlockGrace(violationType: SecurityViolationType) {
+  return (
+    violationType === "FULLSCREEN_EXIT" ||
+    violationType === "WINDOW_SWITCH" ||
+    violationType === "DEVTOOLS"
+  );
+}
+
+function shouldApplyProgressivePenalty(violationType: SecurityViolationType) {
+  return (
+    violationType === "FULLSCREEN_EXIT" ||
+    violationType === "WINDOW_SWITCH" ||
+    violationType === "ALT_TAB"
+  );
+}
+
+function shouldIgnoreDuringUnlockTransition(
+  violationType: SecurityViolationType
+) {
+  return (
+    violationType === "FULLSCREEN_EXIT" ||
+    violationType === "WINDOW_SWITCH" ||
+    violationType === "DEVTOOLS"
+  );
+}
+
+function getProgressivePenaltySeconds(violationCount: number) {
+  return violationCount * PROGRESSIVE_PENALTY_STEP_MINUTES * 60;
 }
 
 export default function StudentAssessment({
@@ -29,28 +97,124 @@ export default function StudentAssessment({
   // All hooks must be called at the top level before any conditional returns
   const { data: paper, isLoading, isError, error } = usePaper(assessmentId);
   const { user } = useAuthStore();
-  const readingTimeSeconds = useMemo(() => {
-    const raw = process.env.NEXT_PUBLIC_EXAM_INITIAL_BUFFER_SECONDS;
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) && parsed >= 0
-      ? Math.round(parsed)
-      : DEFAULT_READING_TIME_SECONDS;
-  }, []);
 
   // Normalized state: answers keyed by subQuestionId (stable UUID)
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [timeRemaining, setTimeRemaining] = useState(readingTimeSeconds);
+  const [timeRemaining, setTimeRemaining] = useState<number>(
+    INITIAL_TIME_REMAINING_SECONDS || 120
+  );
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string>("");
-  const [examStartTime] = useState<Date>(new Date());
   const [isInBufferPeriod, setIsInBufferPeriod] = useState(true);
   const [hasStartedExam, setHasStartedExam] = useState(false);
   const [isExamLocked, setIsExamLocked] = useState(false);
+  const [lockReason, setLockReason] = useState<SecurityViolationType | null>(
+    null
+  );
+  const [adminUnlockCode, setAdminUnlockCode] = useState("");
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [isUnlocking, setIsUnlocking] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0); // Track elapsed time for early submission check
   const [isDevToolsOpen, setIsDevToolsOpen] = useState(false);
   const { create } = useSubmissionMutations();
+  const lastUnlockAtRef = useRef<number>(0);
+  const isUnlockTransitionRef = useRef(false);
+  const progressivePenaltyCountRef = useRef(0);
+
+  const lockExam = useCallback(
+    (violationType: SecurityViolationType, details?: string) => {
+      if (submitted) {
+        return;
+      }
+
+      if (
+        isUnlockTransitionRef.current &&
+        shouldIgnoreDuringUnlockTransition(violationType)
+      ) {
+        return;
+      }
+
+      if (
+        shouldRespectPostUnlockGrace(violationType) &&
+        Date.now() - lastUnlockAtRef.current < POST_UNLOCK_GRACE_MS
+      ) {
+        return;
+      }
+
+      if (shouldApplyProgressivePenalty(violationType)) {
+        progressivePenaltyCountRef.current += 1;
+        const penaltySeconds = getProgressivePenaltySeconds(
+          progressivePenaltyCountRef.current
+        );
+
+        setTimeRemaining((prev) => Math.max(0, prev - penaltySeconds));
+      }
+
+      setLockReason(violationType);
+      setUnlockError(null);
+      setIsExamLocked(true);
+    },
+    [submitted]
+  );
+
+  const enterFullscreen = useCallback(async () => {
+    if (document.documentElement.requestFullscreen) {
+      await document.documentElement.requestFullscreen();
+    }
+  }, []);
+
+  const handleUnlockWithAdminCode = useCallback(async () => {
+    if (!adminUnlockCode.trim()) {
+      setUnlockError("Enter the admin unlock code.");
+      return;
+    }
+
+    setIsUnlocking(true);
+    setUnlockError(null);
+    isUnlockTransitionRef.current = true;
+
+    try {
+      const result = await backendApiFetch<{ unlocked: boolean }>(
+        "/security/exam-unlock",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            paperId: assessmentId,
+            code: adminUnlockCode,
+          }),
+        }
+      );
+
+      if (!result.success) {
+        setUnlockError(result.error || "Invalid admin unlock code.");
+        return;
+      }
+
+      lastUnlockAtRef.current = Date.now();
+      setIsExamLocked(false);
+      setLockReason(null);
+      setAdminUnlockCode("");
+
+      try {
+        await enterFullscreen();
+      } catch (err) {
+        console.error("Error re-entering fullscreen after unlock:", err);
+      } finally {
+        window.setTimeout(() => {
+          isUnlockTransitionRef.current = false;
+        }, 500);
+      }
+    } finally {
+      setIsUnlocking(false);
+      if (isUnlockTransitionRef.current) {
+        window.setTimeout(() => {
+          isUnlockTransitionRef.current = false;
+        }, 500);
+      }
+    }
+  }, [adminUnlockCode, assessmentId, enterFullscreen]);
 
   // Calculate if early submission is allowed
   const canSubmitEarly = useMemo(() => {
@@ -100,7 +264,7 @@ export default function StudentAssessment({
 
   // Unified timer countdown (buffer period then exam period)
   useEffect(() => {
-    if (submitted) return;
+    if (submitted || !hasStartedExam) return;
 
     const timer = window.setInterval(() => {
       setTimeRemaining((prev) => {
@@ -121,12 +285,24 @@ export default function StudentAssessment({
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [submitted, isInBufferPeriod, paper]);
+  }, [submitted, hasStartedExam, isInBufferPeriod, paper]);
 
-  // Security: Disable copy/paste
+  // Security: Detect and block copy/paste shortcuts
   useEffect(() => {
     const preventCopyPaste = (e: ClipboardEvent) => {
+      if (!hasStartedExam || submitted) {
+        return;
+      }
+
+      const type =
+        e.type === "copy"
+          ? "COPY_SHORTCUT"
+          : e.type === "paste"
+          ? "PASTE_SHORTCUT"
+          : "CUT_SHORTCUT";
+
       e.preventDefault();
+      lockExam(type, "Clipboard action blocked");
       return false;
     };
 
@@ -139,7 +315,7 @@ export default function StudentAssessment({
       document.removeEventListener("paste", preventCopyPaste);
       document.removeEventListener("cut", preventCopyPaste);
     };
-  }, []);
+  }, [hasStartedExam, submitted, lockExam]);
 
   // Security: Disable right-click
   useEffect(() => {
@@ -155,54 +331,79 @@ export default function StudentAssessment({
     };
   }, []);
 
-  // Security: Disable keyboard shortcuts (F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U, etc.)
+  // Security: Detect blocked keyboard shortcuts and focus loss
   useEffect(() => {
     const preventKeyboardShortcuts = (e: KeyboardEvent) => {
+      if (!hasStartedExam || submitted) {
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+
       // Disable F12 (DevTools)
       if (e.key === "F12") {
         e.preventDefault();
+        lockExam("KEYBOARD_SHORTCUT", "F12");
         return false;
       }
 
       // Disable Ctrl+Shift+I (DevTools)
       if (e.ctrlKey && e.shiftKey && e.key === "I") {
         e.preventDefault();
+        lockExam("DEVTOOLS", "Ctrl+Shift+I");
         return false;
       }
 
       // Disable Ctrl+Shift+J (Console)
       if (e.ctrlKey && e.shiftKey && e.key === "J") {
         e.preventDefault();
+        lockExam("DEVTOOLS", "Ctrl+Shift+J");
         return false;
       }
 
       // Disable Ctrl+Shift+C (Inspect Element)
       if (e.ctrlKey && e.shiftKey && e.key === "C") {
         e.preventDefault();
+        lockExam("DEVTOOLS", "Ctrl+Shift+C");
         return false;
       }
 
       // Disable Ctrl+U (View Source)
-      if (e.ctrlKey && e.key === "u") {
+      if (e.ctrlKey && key === "u") {
         e.preventDefault();
+        lockExam("KEYBOARD_SHORTCUT", "Ctrl+U");
         return false;
       }
 
-      // Disable Windows/Command key
-      if (e.key === "Meta" || e.metaKey) {
+      // Disable copy, paste, cut, and tab switching shortcuts
+      if ((e.ctrlKey || e.metaKey) && ["c", "v", "x"].includes(key)) {
         e.preventDefault();
+        lockExam(
+          key === "c"
+            ? "COPY_SHORTCUT"
+            : key === "v"
+            ? "PASTE_SHORTCUT"
+            : "CUT_SHORTCUT",
+          `${e.ctrlKey ? "Ctrl" : "Cmd"}+${key.toUpperCase()}`
+        );
         return false;
       }
 
-      // Disable Alt key combinations
-      if (e.altKey) {
+      if ((e.altKey && key === "tab") || (e.metaKey && key === "tab")) {
         e.preventDefault();
+        lockExam("ALT_TAB", `${e.altKey ? "Alt" : "Cmd"}+Tab`);
         return false;
       }
 
-      // Disable Ctrl key (alone)
-      if (e.ctrlKey && !e.shiftKey && !e.key.match(/^[a-z0-9]$/i)) {
+      if (e.altKey && key === "f4") {
         e.preventDefault();
+        lockExam("KEYBOARD_SHORTCUT", "Alt+F4");
+        return false;
+      }
+
+      if (e.metaKey) {
+        e.preventDefault();
+        lockExam("KEYBOARD_SHORTCUT", `Meta+${e.key}`);
         return false;
       }
     };
@@ -212,7 +413,7 @@ export default function StudentAssessment({
     return () => {
       document.removeEventListener("keydown", preventKeyboardShortcuts);
     };
-  }, []);
+  }, [hasStartedExam, submitted, lockExam]);
 
   // Security: Detect DevTools (before and during exam)
   useEffect(() => {
@@ -226,7 +427,7 @@ export default function StudentAssessment({
 
       if (devToolsDetected) {
         setIsDevToolsOpen(true);
-        console.warn("DevTools detection triggered");
+        lockExam("DEVTOOLS", "DevTools dimension threshold exceeded");
       } else {
         setIsDevToolsOpen(false);
       }
@@ -238,7 +439,7 @@ export default function StudentAssessment({
     const interval = setInterval(detectDevTools, 500);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [lockExam]);
 
   // Security: Monitor fullscreen and lock exam if exited
   useEffect(() => {
@@ -246,8 +447,7 @@ export default function StudentAssessment({
 
     const handleFullscreenChange = () => {
       if (!document.fullscreenElement && hasStartedExam && !submitted) {
-        // User exited fullscreen during exam, lock the exam interface
-        setIsExamLocked(true);
+        lockExam("FULLSCREEN_EXIT", "Fullscreen mode exited");
       }
     };
 
@@ -262,7 +462,32 @@ export default function StudentAssessment({
         });
       }
     };
-  }, [hasStartedExam, submitted]);
+  }, [hasStartedExam, submitted, lockExam]);
+
+  // Security: Detect focus loss and window switching
+  useEffect(() => {
+    if (!hasStartedExam) return;
+
+    const handleBlur = () => {
+      if (!submitted) {
+        lockExam("WINDOW_SWITCH", "Window lost focus");
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden" && !submitted) {
+        lockExam("WINDOW_SWITCH", "Tab or window hidden");
+      }
+    };
+
+    window.addEventListener("blur", handleBlur);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("blur", handleBlur);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [hasStartedExam, submitted, lockExam]);
 
   // Security: Prevent browser back button navigation
   useEffect(() => {
@@ -341,14 +566,6 @@ export default function StudentAssessment({
         },
       }
     );
-  };
-
-  const formatTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${minutes.toString().padStart(2, "0")}:${secs
-      .toString()
-      .padStart(2, "0")}`;
   };
 
   // Track answered status separately to avoid recomputing navigation on every keystroke
@@ -455,27 +672,12 @@ export default function StudentAssessment({
     }
 
     try {
-      if (document.documentElement.requestFullscreen) {
-        await document.documentElement.requestFullscreen();
-      }
+      await enterFullscreen();
       setHasStartedExam(true);
     } catch (err) {
       console.error("Error entering fullscreen:", err);
       // Still allow starting exam even if fullscreen fails
       setHasStartedExam(true);
-    }
-  };
-
-  // Handler to re-enter fullscreen after lock
-  const handleReEnterFullscreen = async () => {
-    try {
-      if (document.documentElement.requestFullscreen) {
-        await document.documentElement.requestFullscreen();
-        setIsExamLocked(false);
-      }
-    } catch (err) {
-      console.error("Error re-entering fullscreen:", err);
-      alert("Failed to enter fullscreen. Please try again.");
     }
   };
 
@@ -647,29 +849,58 @@ export default function StudentAssessment({
           <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center">
             <Card className="max-w-md w-full mx-4 p-8 space-y-6">
               <div className="text-center space-y-4">
-                <div className="text-6xl">🚫</div>
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-100 text-red-600">
+                  <Lock className="h-7 w-7" />
+                </div>
                 <h2 className="text-2xl font-bold text-red-600">
                   Exam Interface Locked
                 </h2>
                 <p className="text-gray-700">
-                  You exited fullscreen mode during the exam. The exam interface
-                  has been locked to maintain exam integrity.
+                  {lockReason
+                    ? getSecurityViolationMessage(lockReason)
+                    : "The exam interface has been locked to maintain exam integrity."}
                 </p>
                 <p className="text-sm text-gray-600">
-                  Click the button below to re-enter fullscreen and continue
-                  your exam.
+                  Ask an admin for the unlock code, enter it below, then return
+                  to fullscreen to continue.
                 </p>
               </div>
-              <Button
-                size="lg"
-                className="w-full"
-                onClick={handleReEnterFullscreen}
-              >
-                Re-enter Fullscreen to Continue
-              </Button>
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">
+                    Admin unlock code
+                  </label>
+                  <Input
+                    value={adminUnlockCode}
+                    onChange={(e) => setAdminUnlockCode(e.target.value)}
+                    placeholder="Enter admin code"
+                    autoComplete="one-time-code"
+                    inputMode="numeric"
+                    disabled={isUnlocking}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        void handleUnlockWithAdminCode();
+                      }
+                    }}
+                  />
+                </div>
+                {unlockError ? (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {unlockError}
+                  </div>
+                ) : null}
+                <Button
+                  size="lg"
+                  className="w-full gap-2"
+                  onClick={handleUnlockWithAdminCode}
+                  disabled={isUnlocking}
+                >
+                  <KeyRound className="h-4 w-4" />
+                  {isUnlocking ? "Verifying code..." : "Unlock Exam"}
+                </Button>
+              </div>
               <p className="text-xs text-center text-gray-500">
-                Warning: Multiple exits from fullscreen may be flagged for
-                review.
+                Security incidents are logged for review.
               </p>
             </Card>
           </div>
