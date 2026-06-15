@@ -68,6 +68,7 @@ model SubQuestion {
   updatedAt                DateTime     @updatedAt
   mcqOptions               Json?
   questionType             QuestionType @default(DESCRIPTIVE)
+  template                 Json?
   circuitTemplate          Json?
   imageCompositionTemplate Json?
   answers                  Answer[]
@@ -171,6 +172,7 @@ enum QuestionType {
   MCQ
   GRAPH
   TABLE
+  INTERACTIVE_TABLE
   CIRCUIT
   DRAWING
   IMAGE_COMPOSITION

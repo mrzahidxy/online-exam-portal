@@ -34,6 +34,8 @@ const RichTextEditor = dynamic(
 import { useToast } from '@/hooks/use-toast';
 import { CircuitBoardDesigner } from '@/components/exam/circuit-board-designer';
 import { ImageCompositionBoardDesigner } from '@/components/exam/image-composition-board-designer';
+import { InteractiveTableBuilder } from '@/components/exam/interactive-table-builder';
+import { InteractiveTablePreview } from '@/components/exam/interactive-table-renderer';
 import {
   addQuestionsToPaper,
   fetchPaper,
@@ -51,6 +53,12 @@ import {
   normalizeImageCompositionTemplate,
   type ImageCompositionTemplate,
 } from '@/lib/image-composition-template';
+import {
+  createDefaultInteractiveTableTemplate,
+  normalizeInteractiveTableTemplate,
+  validateInteractiveTableTemplate,
+  type InteractiveTableTemplate,
+} from '@/lib/interactive-table';
 
 interface QuestionBuilderPageProps {
   paperId?: string;
@@ -61,14 +69,25 @@ type McqOption = {
   value: string;
 };
 
+type SubQuestionType =
+  | 'DESCRIPTIVE'
+  | 'MCQ'
+  | 'GRAPH'
+  | 'TABLE'
+  | 'INTERACTIVE_TABLE'
+  | 'CIRCUIT'
+  | 'DRAWING'
+  | 'IMAGE_COMPOSITION';
+
 type SubQuestion = {
   sub_question_id: string;
   question: string;
   marks: number;
-  type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT' | 'DRAWING' | 'IMAGE_COMPOSITION';
+  type: SubQuestionType;
   options: McqOption[];
   circuitTemplate: CircuitTemplate | null;
   imageCompositionTemplate: ImageCompositionTemplate | null;
+  template: InteractiveTableTemplate | null;
 };
 
 type Question = {
@@ -76,13 +95,15 @@ type Question = {
   question_number: number;
   description: string;
   marks: number;
-  type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT' | 'DRAWING' | 'IMAGE_COMPOSITION';
+  type: SubQuestionType;
   sub_questions: SubQuestion[];
 };
 
 const DEFAULT_CIRCUIT_TEMPLATE: CircuitTemplate = createDefaultCircuitTemplate();
 const DEFAULT_IMAGE_COMPOSITION_TEMPLATE: ImageCompositionTemplate =
   createDefaultImageCompositionTemplate();
+const DEFAULT_INTERACTIVE_TABLE_TEMPLATE: InteractiveTableTemplate =
+  createDefaultInteractiveTableTemplate();
 
 type ExamPaper = {
   title: string;
@@ -111,6 +132,7 @@ const DEFAULT_EXAM: ExamPaper = {
           options: [],
           circuitTemplate: null,
           imageCompositionTemplate: null,
+          template: null,
         },
       ],
     },
@@ -124,6 +146,9 @@ const createBlankExam = (): ExamPaper => ({
     sub_questions: q.sub_questions.map((sq) => ({
       ...sq,
       options: [...(sq.options || [])],
+      template: sq.template
+        ? normalizeInteractiveTableTemplate(sq.template)
+        : null,
     })),
   })),
 });
@@ -167,13 +192,7 @@ const mapPaperResponseToExam = (paper: PaperResponse): ExamPaper => {
                 ),
                 marks: subQuestion.marks ?? 0,
                 type: (subQuestion.questionType ?? 'DESCRIPTIVE') as
-                  | 'DESCRIPTIVE'
-                  | 'MCQ'
-                  | 'GRAPH'
-                  | 'TABLE'
-                  | 'CIRCUIT'
-                  | 'DRAWING'
-                  | 'IMAGE_COMPOSITION',
+                  SubQuestionType,
                 options: mcqOptions,
                 circuitTemplate: normalizeCircuitTemplate(
                   subQuestion.circuitTemplate
@@ -181,6 +200,9 @@ const mapPaperResponseToExam = (paper: PaperResponse): ExamPaper => {
                 imageCompositionTemplate: normalizeImageCompositionTemplate(
                   subQuestion.imageCompositionTemplate
                 ),
+                template: subQuestion.template
+                  ? normalizeInteractiveTableTemplate(subQuestion.template)
+                  : null,
               };
             })
           : [
@@ -192,6 +214,7 @@ const mapPaperResponseToExam = (paper: PaperResponse): ExamPaper => {
                 options: [],
                 circuitTemplate: null,
                 imageCompositionTemplate: null,
+                template: null,
               },
             ];
 
@@ -292,6 +315,7 @@ export default function QuestionBuilderPage({
                 options: [],
                 circuitTemplate: null,
                 imageCompositionTemplate: null,
+                template: null,
               },
             ],
           };
@@ -334,6 +358,7 @@ export default function QuestionBuilderPage({
                 options: [],
                 circuitTemplate: null,
                 imageCompositionTemplate: null,
+                template: null,
               },
             ],
           };
@@ -517,13 +542,15 @@ export default function QuestionBuilderPage({
         ? 'Graph'
         : currentSubQuestion.type === 'TABLE'
           ? 'Table'
-          : currentSubQuestion.type === 'CIRCUIT'
-            ? 'Circuit'
-            : currentSubQuestion.type === 'DRAWING'
-              ? 'Drawing'
-              : currentSubQuestion.type === 'IMAGE_COMPOSITION'
-                ? 'Image Composition'
-                : 'Descriptive'
+          : currentSubQuestion.type === 'INTERACTIVE_TABLE'
+            ? 'Interactive Table'
+            : currentSubQuestion.type === 'CIRCUIT'
+              ? 'Circuit'
+              : currentSubQuestion.type === 'DRAWING'
+                ? 'Drawing'
+                : currentSubQuestion.type === 'IMAGE_COMPOSITION'
+                  ? 'Image Composition'
+                  : 'Descriptive'
     : 'Descriptive';
   const hasExistingQuestions = (paperMeta?.questions?.length ?? 0) > 0;
 
@@ -562,6 +589,13 @@ export default function QuestionBuilderPage({
                         imageCompositionTemplate:
                           subQuestion.imageCompositionTemplate ??
                           DEFAULT_IMAGE_COMPOSITION_TEMPLATE,
+                      }
+                    : {}),
+                  ...(subQuestion.type === 'INTERACTIVE_TABLE'
+                    ? {
+                        template:
+                          subQuestion.template ??
+                          DEFAULT_INTERACTIVE_TABLE_TEMPLATE,
                       }
                     : {}),
                 })
@@ -608,6 +642,32 @@ export default function QuestionBuilderPage({
     console.log('Saving draft exam paper', exam);
   };
 
+  const getInteractiveTableValidationErrors = () =>
+    exam.questions.flatMap((question) =>
+      question.sub_questions.flatMap((subQuestion) => {
+        if (subQuestion.type !== 'INTERACTIVE_TABLE') return [];
+        const validation = validateInteractiveTableTemplate(
+          subQuestion.template ?? DEFAULT_INTERACTIVE_TABLE_TEMPLATE
+        );
+        return validation.errors.map(
+          (error) =>
+            `Question ${question.question_number}${subQuestion.sub_question_id}: ${error}`
+        );
+      })
+    );
+
+  const validateBeforeSave = () => {
+    const errors = getInteractiveTableValidationErrors();
+    if (errors.length === 0) return true;
+
+    toast({
+      title: 'Interactive table needs attention',
+      description: errors.slice(0, 3).join(' '),
+      variant: 'destructive',
+    });
+    return false;
+  };
+
   const handleSubmitPaper = async () => {
     if (!paperIdValue) {
       toast({
@@ -618,6 +678,8 @@ export default function QuestionBuilderPage({
       });
       return;
     }
+
+    if (!validateBeforeSave()) return;
 
     setIsSubmitting(true);
     try {
@@ -664,6 +726,8 @@ export default function QuestionBuilderPage({
       });
       return;
     }
+
+    if (!validateBeforeSave()) return;
 
     setIsUpdatingQuestions(true);
     try {
@@ -1062,13 +1126,14 @@ export default function QuestionBuilderPage({
                           </Label>
                           <Select
                             value={currentSubQuestion.type}
-                            onValueChange={(value: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE' | 'CIRCUIT' | 'DRAWING' | 'IMAGE_COMPOSITION') => {
+                            onValueChange={(value) => {
+                              const questionType = value as SubQuestionType;
                                 updateSubQuestion(
                                   currentQuestion.id,
                                   currentSubQuestion.sub_question_id,
-                                  { type: value }
+                                  { type: questionType }
                                 );
-                              if (value === 'CIRCUIT' && !currentSubQuestion.circuitTemplate) {
+                              if (questionType === 'CIRCUIT' && !currentSubQuestion.circuitTemplate) {
                                 updateSubQuestion(
                                   currentQuestion.id,
                                   currentSubQuestion.sub_question_id,
@@ -1078,7 +1143,7 @@ export default function QuestionBuilderPage({
                                 );
                               }
                               if (
-                                value === 'IMAGE_COMPOSITION' &&
+                                questionType === 'IMAGE_COMPOSITION' &&
                                 !currentSubQuestion.imageCompositionTemplate
                               ) {
                                 updateSubQuestion(
@@ -1090,9 +1155,22 @@ export default function QuestionBuilderPage({
                                   }
                                 );
                               }
+                              if (
+                                questionType === 'INTERACTIVE_TABLE' &&
+                                !currentSubQuestion.template
+                              ) {
+                                updateSubQuestion(
+                                  currentQuestion.id,
+                                  currentSubQuestion.sub_question_id,
+                                  {
+                                    template:
+                                      DEFAULT_INTERACTIVE_TABLE_TEMPLATE,
+                                  }
+                                );
+                              }
                               // Add default options when switching to MCQ
                               if (
-                                value === 'MCQ' &&
+                                questionType === 'MCQ' &&
                                 currentSubQuestion.options.length === 0
                               ) {
                                 updateSubQuestion(
@@ -1123,6 +1201,9 @@ export default function QuestionBuilderPage({
                               </SelectItem>
                               <SelectItem value="TABLE">
                                 Table Answer
+                              </SelectItem>
+                              <SelectItem value="INTERACTIVE_TABLE">
+                                Interactive Table
                               </SelectItem>
                               <SelectItem value="CIRCUIT">
                                 Circuit Answer
@@ -1282,6 +1363,24 @@ export default function QuestionBuilderPage({
                         </div>
                       )}
 
+                      {currentSubQuestion.type === 'INTERACTIVE_TABLE' && (
+                        <InteractiveTableBuilder
+                          template={
+                            currentSubQuestion.template ??
+                            DEFAULT_INTERACTIVE_TABLE_TEMPLATE
+                          }
+                          onChange={(nextTemplate) =>
+                            updateSubQuestion(
+                              currentQuestion.id,
+                              currentSubQuestion.sub_question_id,
+                              {
+                                template: nextTemplate,
+                              }
+                            )
+                          }
+                        />
+                      )}
+
                       {currentSubQuestion.type === 'CIRCUIT' && (
                         <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
                           <div>
@@ -1432,6 +1531,17 @@ export default function QuestionBuilderPage({
                           ))}
                         </div>
                       )}
+
+                    {currentSubQuestion.type === 'INTERACTIVE_TABLE' && (
+                      <div className="mt-3">
+                        <InteractiveTablePreview
+                          template={
+                            currentSubQuestion.template ??
+                            DEFAULT_INTERACTIVE_TABLE_TEMPLATE
+                          }
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

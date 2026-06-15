@@ -8,6 +8,7 @@ import { DrawingAnswerEditor } from "@/components/exam/drawing-answer";
 import { ImageCompositionAnswerEditor } from "@/components/exam/image-composition-answer";
 import { CircuitAnswerEditor } from "@/components/exam/circuit-answer";
 import { TableAnswerEditor } from "@/components/exam/table-answer";
+import { InteractiveTableReview } from "@/components/exam/interactive-table-renderer";
 import type { SubmissionDetail } from "@/types";
 
 type ReviewAnswersProps = {
@@ -110,6 +111,8 @@ export default function ReviewAnswers({
                 const isGraph = subQuestion.questionType === "GRAPH";
                 const isDrawing = subQuestion.questionType === "DRAWING";
                 const isImageComposition = subQuestion.questionType === "IMAGE_COMPOSITION";
+                const isInteractiveTable =
+                  subQuestion.questionType === "INTERACTIVE_TABLE";
                 const isCircuit = subQuestion.questionType === "CIRCUIT";
                 const isTable = subQuestion.questionType === "TABLE";
 
@@ -148,6 +151,11 @@ export default function ReviewAnswers({
                           value={subQuestion.answer?.answerText ?? ""}
                           readonly
                           template={subQuestion.circuitTemplate ?? undefined}
+                        />
+                      ) : isInteractiveTable ? (
+                        <InteractiveTableReview
+                          value={subQuestion.answer?.answerText ?? ""}
+                          template={subQuestion.template ?? undefined}
                         />
                       ) : isTable ? (
                         <TableAnswerEditor

@@ -9,6 +9,7 @@ import { useSubmissionMutations } from "@/hooks/mutations/useSubmissionMutations
 import { usePaper } from "@/hooks/queries/usePaper";
 import { useAuthStore } from "@/lib/auth-store";
 import { backendApiFetch } from "@/lib/api-client";
+import { getInteractiveTableAnswerHasValue } from "@/lib/interactive-table";
 import { TopAppBar } from "./exam/top-app-bar";
 import { QuestionCard } from "./exam/question-card";
 import { RightNavigator } from "./exam/right-navigator";
@@ -40,10 +41,21 @@ const SECURITY_VIOLATION_LABELS: Record<SecurityViolationType, string> = {
 };
 
 const POST_UNLOCK_GRACE_MS = 2500;
+const PENALTY_COOLDOWN_MS = 3000;
 const PROGRESSIVE_PENALTY_STEP_MINUTES = 10;
-const INITIAL_TIME_REMAINING_SECONDS = Number(
-  process.env.NEXT_PUBLIC_EXAM_INITIAL_BUFFER_SECONDS || 120
-);
+const DEFAULT_INITIAL_TIME_REMAINING_SECONDS = 120;
+const configuredInitialTimeRemaining =
+  process.env.NEXT_PUBLIC_EXAM_INITIAL_BUFFER_SECONDS;
+const parsedInitialTimeRemaining =
+  configuredInitialTimeRemaining === undefined ||
+  configuredInitialTimeRemaining.trim() === ""
+    ? DEFAULT_INITIAL_TIME_REMAINING_SECONDS
+    : Number(configuredInitialTimeRemaining);
+const INITIAL_TIME_REMAINING_SECONDS = Number.isFinite(
+  parsedInitialTimeRemaining
+)
+  ? parsedInitialTimeRemaining
+  : DEFAULT_INITIAL_TIME_REMAINING_SECONDS;
 
 // Helper to strip HTML tags for answer validation
 function stripHtml(html: string): string {
@@ -101,7 +113,7 @@ export default function StudentAssessment({
   // Normalized state: answers keyed by subQuestionId (stable UUID)
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [timeRemaining, setTimeRemaining] = useState<number>(
-    INITIAL_TIME_REMAINING_SECONDS || 120
+    INITIAL_TIME_REMAINING_SECONDS
   );
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -121,11 +133,13 @@ export default function StudentAssessment({
   const { create } = useSubmissionMutations();
   const lastUnlockAtRef = useRef<number>(0);
   const isUnlockTransitionRef = useRef(false);
+  const isExamLockedRef = useRef(false);
+  const lastPenaltyAtRef = useRef<number>(0);
   const progressivePenaltyCountRef = useRef(0);
 
   const lockExam = useCallback(
     (violationType: SecurityViolationType, details?: string) => {
-      if (submitted) {
+      if (submitted || isExamLockedRef.current) {
         return;
       }
 
@@ -144,14 +158,20 @@ export default function StudentAssessment({
       }
 
       if (shouldApplyProgressivePenalty(violationType)) {
-        progressivePenaltyCountRef.current += 1;
-        const penaltySeconds = getProgressivePenaltySeconds(
-          progressivePenaltyCountRef.current
-        );
+        const now = Date.now();
 
-        setTimeRemaining((prev) => Math.max(0, prev - penaltySeconds));
+        if (now - lastPenaltyAtRef.current >= PENALTY_COOLDOWN_MS) {
+          lastPenaltyAtRef.current = now;
+          progressivePenaltyCountRef.current += 1;
+          const penaltySeconds = getProgressivePenaltySeconds(
+            progressivePenaltyCountRef.current
+          );
+
+          setTimeRemaining((prev) => Math.max(0, prev - penaltySeconds));
+        }
       }
 
+      isExamLockedRef.current = true;
       setLockReason(violationType);
       setUnlockError(null);
       setIsExamLocked(true);
@@ -193,6 +213,7 @@ export default function StudentAssessment({
       }
 
       lastUnlockAtRef.current = Date.now();
+      isExamLockedRef.current = false;
       setIsExamLocked(false);
       setLockReason(null);
       setAdminUnlockCode("");
@@ -531,6 +552,27 @@ export default function StudentAssessment({
     window.location.href = "/student/assessments";
   };
 
+  const subQuestionById = useMemo(() => {
+    const items = new Map<string, any>();
+    paper?.questions?.forEach((question) => {
+      question.subQuestions.forEach((subQuestion) => {
+        items.set(subQuestion.id, subQuestion);
+      });
+    });
+    return items;
+  }, [paper]);
+
+  const isAnswerFilled = useCallback(
+    (subQuestionId: string, answer: string) => {
+      const subQuestion = subQuestionById.get(subQuestionId);
+      if (subQuestion?.questionType === "INTERACTIVE_TABLE") {
+        return getInteractiveTableAnswerHasValue(answer, subQuestion.template);
+      }
+      return stripHtml(answer).trim() !== "";
+    },
+    [subQuestionById]
+  );
+
   const handleSubmit = () => {
     setIsSubmitting(true);
     setSubmissionError(null);
@@ -538,7 +580,7 @@ export default function StudentAssessment({
     // Convert answers object to array format expected by backend
     // Filter out empty answers (strip HTML and check for content)
     const submissionAnswers = Object.entries(answers)
-      .filter(([_, answer]) => stripHtml(answer).trim() !== "")
+      .filter(([subQuestionId, answer]) => isAnswerFilled(subQuestionId, answer))
       .map(([subQuestionId, answerText]) => ({
         subQuestionId,
         answerText,
@@ -579,7 +621,7 @@ export default function StudentAssessment({
     let hasChanged = false;
 
     Object.entries(answers).forEach(([id, answer]) => {
-      const isAnswered = stripHtml(answer).trim().length > 0;
+      const isAnswered = isAnswerFilled(id, answer);
       newAnsweredStatus[id] = isAnswered;
 
       if (answeredStatus[id] !== isAnswered) {
@@ -590,7 +632,7 @@ export default function StudentAssessment({
     if (hasChanged) {
       setAnsweredStatus(newAnsweredStatus);
     }
-  }, [answers]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [answers, isAnswerFilled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Build navigation data - only recalculates when answeredStatus changes
   const navigationData = useMemo(() => {
@@ -610,10 +652,10 @@ export default function StudentAssessment({
 
   // Count answered questions for completion display
   const totalAnswers = useMemo(() => {
-    return Object.values(answers).filter(
-      (answer) => stripHtml(answer).trim() !== ""
+    return Object.entries(answers).filter(([subQuestionId, answer]) =>
+      isAnswerFilled(subQuestionId, answer)
     ).length;
-  }, [answers]);
+  }, [answers, isAnswerFilled]);
 
   // Navigation handlers
   const handleSelectQuestion = (questionId: string) => {

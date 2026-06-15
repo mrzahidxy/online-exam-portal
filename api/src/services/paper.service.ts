@@ -20,6 +20,7 @@ import {
 import { AuthenticatedUser } from '../types/user';
 import { HttpError } from '../utils/http-error';
 import { prisma } from '../utils/prisma';
+import { validateInteractiveTableTemplateForQuestionType } from '../validators/interactive-table.validator';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
@@ -160,22 +161,28 @@ const buildQuestionData = (questions?: CreateQuestionInput[]) => {
       marks: question.marks,
       position: question.position,
           subQuestions: {
-            create: question.subQuestions.map((sub) => ({
-              label: sub.label,
-              question: sub.question,
-              marks: sub.marks,
-              position: sub.position,
-              questionType: normalizeQuestionType(sub.questionType),
-              mcqOptions: sub.mcqOptions ?? undefined,
-              circuitTemplate: resolveCircuitTemplate(
-                sub.questionType,
-                sub.circuitTemplate
-              ),
-              imageCompositionTemplate: resolveImageCompositionTemplate(
-                sub.questionType,
-                sub.imageCompositionTemplate
-              ),
-            })),
+            create: question.subQuestions.map((sub) => {
+              const questionType = normalizeQuestionType(sub.questionType);
+              validateInteractiveTableTemplateForQuestionType(questionType, sub.template);
+
+              return {
+                label: sub.label,
+                question: sub.question,
+                marks: sub.marks,
+                position: sub.position,
+                questionType,
+                mcqOptions: sub.mcqOptions ?? undefined,
+                template: sub.template as Prisma.InputJsonValue | undefined,
+                circuitTemplate: resolveCircuitTemplate(
+                  sub.questionType,
+                  sub.circuitTemplate
+                ),
+                imageCompositionTemplate: resolveImageCompositionTemplate(
+                  sub.questionType,
+                  sub.imageCompositionTemplate
+                ),
+              };
+            }),
           },
         })),
       };
@@ -301,12 +308,20 @@ const upsertSubQuestions = async (
       if (subInput.mcqOptions !== undefined) {
         data.mcqOptions = subInput.mcqOptions;
       }
+      if (subInput.template !== undefined) {
+        data.template = subInput.template as Prisma.InputJsonValue;
+      }
       if (subInput.circuitTemplate !== undefined) {
         data.circuitTemplate = subInput.circuitTemplate;
       }
       if (subInput.imageCompositionTemplate !== undefined) {
         data.imageCompositionTemplate = subInput.imageCompositionTemplate;
       }
+
+      validateInteractiveTableTemplateForQuestionType(
+        subInput.questionType ?? target.questionType,
+        subInput.template !== undefined ? subInput.template : target.template
+      );
 
       if (Object.keys(data).length === 0) {
         continue;
@@ -341,6 +356,8 @@ const upsertSubQuestions = async (
     }
 
     occupiedPositionLabels.add(newKey);
+    const questionType = normalizeQuestionType(subInput.questionType);
+    validateInteractiveTableTemplateForQuestionType(questionType, subInput.template);
 
     await tx.subQuestion.create({
       data: {
@@ -349,8 +366,9 @@ const upsertSubQuestions = async (
         question: subInput.question,
         marks: subInput.marks,
         position: subInput.position,
-        questionType: normalizeQuestionType(subInput.questionType),
+        questionType,
         mcqOptions: subInput.mcqOptions ?? undefined,
+        template: subInput.template as Prisma.InputJsonValue | undefined,
         circuitTemplate: resolveCircuitTemplate(
           subInput.questionType,
           subInput.circuitTemplate
@@ -587,14 +605,28 @@ export const paperService = {
             marks: input.marks,
             position: input.position,
             subQuestions: {
-              create: input.subQuestions.map((sub) => ({
-                label: sub.label,
-                question: sub.question,
-                marks: sub.marks,
-                position: sub.position,
-                questionType: normalizeQuestionType(sub.questionType),
-                mcqOptions: sub.mcqOptions ?? undefined,
-              })),
+              create: input.subQuestions.map((sub) => {
+                const questionType = normalizeQuestionType(sub.questionType);
+                validateInteractiveTableTemplateForQuestionType(questionType, sub.template);
+
+                return {
+                  label: sub.label,
+                  question: sub.question,
+                  marks: sub.marks,
+                  position: sub.position,
+                  questionType,
+                  mcqOptions: sub.mcqOptions ?? undefined,
+                  template: sub.template as Prisma.InputJsonValue | undefined,
+                  circuitTemplate: resolveCircuitTemplate(
+                    sub.questionType,
+                    sub.circuitTemplate
+                  ),
+                  imageCompositionTemplate: resolveImageCompositionTemplate(
+                    sub.questionType,
+                    sub.imageCompositionTemplate
+                  ),
+                };
+              }),
             },
           },
         })
@@ -755,13 +787,17 @@ export const paperService = {
                     'New sub-questions require label, position, question, and marks'
                   );
                 }
+                const questionType = normalizeQuestionType(sub.questionType);
+                validateInteractiveTableTemplateForQuestionType(questionType, sub.template);
+
                 return {
                   label: sub.label,
                   question: sub.question,
                   marks: sub.marks,
                   position: sub.position,
-                  questionType: normalizeQuestionType(sub.questionType),
+                  questionType,
                   mcqOptions: sub.mcqOptions ?? undefined,
+                  template: sub.template as Prisma.InputJsonValue | undefined,
                   circuitTemplate: resolveCircuitTemplate(
                     sub.questionType,
                     sub.circuitTemplate
