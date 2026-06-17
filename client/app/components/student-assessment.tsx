@@ -139,12 +139,6 @@ export default function StudentAssessment({
 
   const lockExam = useCallback(
     (violationType: SecurityViolationType, details?: string) => {
-      // TEMP: Admin lock system is disabled. Re-enable by restoring the block below.
-      void violationType;
-      void details;
-      return;
-
-      /*
       if (submitted || isExamLockedRef.current) {
         return;
       }
@@ -181,9 +175,8 @@ export default function StudentAssessment({
       setLockReason(violationType);
       setUnlockError(null);
       setIsExamLocked(true);
-      */
     },
-    []
+    [submitted]
   );
 
   const enterFullscreen = useCallback(async () => {

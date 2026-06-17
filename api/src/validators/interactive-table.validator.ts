@@ -22,6 +22,8 @@ const FILLABLE_CELL_TYPES = new Set([
 type FillableCell = {
   id: string;
   type: 'text_input' | 'number_input' | 'select' | 'drop_zone' | 'drop_expression';
+  required: boolean;
+  options?: string[];
 };
 
 type TemplateMetadata = {
@@ -35,16 +37,21 @@ const fail = (message: string): never => {
   throw new HttpError(400, message);
 };
 
-const assertStringId = (value: unknown, message: string) => {
+const assertUniqueStringId = (
+  value: unknown,
+  seen: Set<string>,
+  message: string
+) => {
   if (typeof value !== 'string') {
     fail(message);
   }
 
   const id = value as string;
-  if (id.trim().length === 0) {
+  if (id.trim().length === 0 || seen.has(id)) {
     fail(message);
   }
 
+  seen.add(id);
   return id;
 };
 
@@ -71,15 +78,17 @@ export const validateInteractiveTableTemplate = (
 
   const columns = data.columns as unknown[];
   const rows = data.rows as unknown[];
+  const columnIds = new Set<string>();
   for (const column of columns) {
     if (!isPlainObject(column)) {
       fail('Interactive table columns must be objects');
     }
     const columnData = column as Record<string, unknown>;
 
-    assertStringId(
+    assertUniqueStringId(
       columnData.id,
-      'Interactive table column ids must be strings'
+      columnIds,
+      'Interactive table column ids must be unique strings'
     );
 
     if (typeof columnData.label !== 'string') {
@@ -87,6 +96,7 @@ export const validateInteractiveTableTemplate = (
     }
   }
 
+  const rowIds = new Set<string>();
   const fillableCells = new Map<string, FillableCell>();
 
   for (const row of rows) {
@@ -95,9 +105,10 @@ export const validateInteractiveTableTemplate = (
     }
     const rowData = row as Record<string, unknown>;
 
-    assertStringId(
+    assertUniqueStringId(
       rowData.id,
-      'Interactive table row ids must be strings'
+      rowIds,
+      'Interactive table row ids must be unique strings'
     );
 
     if (!Array.isArray(rowData.cells) || rowData.cells.length !== columns.length) {
@@ -144,19 +155,35 @@ export const validateInteractiveTableTemplate = (
         fail('Interactive table fillable cell ids must be unique');
       }
 
+      if (cellType === 'drop_expression') {
+        if (
+          typeof cellData.before !== 'string' ||
+          typeof cellData.after !== 'string'
+        ) {
+          fail('Interactive table drop_expression cells require before and after strings');
+        }
+      }
+
       if (cellType === 'select' || cellType === 'drop_zone' || cellType === 'drop_expression') {
         if (
-          cellData.options !== undefined &&
-          (!Array.isArray(cellData.options) ||
-            (cellData.options as unknown[]).some((option) => typeof option !== 'string'))
+          !Array.isArray(cellData.options) ||
+          cellData.options.length === 0 ||
+          (cellData.options as unknown[]).some((option) => typeof option !== 'string')
         ) {
-          fail('Interactive table select/drop options must be strings');
+          fail('Interactive table select/drop cells require non-empty string options');
         }
       }
 
       fillableCells.set(cellId, {
         id: cellId,
         type: cellType as FillableCell['type'],
+        required: cellData.required === true,
+        options:
+          cellType === 'select' ||
+          cellType === 'drop_zone' ||
+          cellType === 'drop_expression'
+            ? (cellData.options as string[])
+            : undefined,
       });
     }
   }
@@ -167,7 +194,10 @@ export const validateInteractiveTableTemplate = (
     }
     const modelAnswer = data.modelAnswer as Record<string, unknown>;
 
-    for (const value of Object.values(modelAnswer)) {
+    for (const [key, value] of Object.entries(modelAnswer)) {
+      if (!fillableCells.has(key)) {
+        fail('Interactive table modelAnswer keys must match fillable cell ids');
+      }
       if (typeof value !== 'string') {
         fail('Interactive table modelAnswer values must be strings');
       }
@@ -194,6 +224,23 @@ const parseAnswerText = (answerText: string): unknown => {
   }
 };
 
+const isEmptyValue = (value: unknown) =>
+  value === null ||
+  value === undefined ||
+  (typeof value === 'string' && value.trim().length === 0);
+
+const isNumericValue = (value: unknown) => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value);
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return Number.isFinite(Number(value));
+  }
+
+  return false;
+};
+
 export const validateInteractiveTableAnswer = (
   answerText: string,
   template: unknown
@@ -216,14 +263,40 @@ export const validateInteractiveTableAnswer = (
   }
 
   const values = data.values as Record<string, unknown>;
-  for (const [key, value] of Object.entries(values)) {
-    if (!fillableCells.has(key)) {
+  for (const key of Object.keys(values)) {
+    const cell = fillableCells.get(key);
+    if (!cell) {
       fail('Interactive table answer keys must match fillable cell ids');
       continue;
     }
 
-    if (typeof value !== 'string') {
-      fail('Interactive table answer values must be strings');
+    const value = values[key];
+    if (isEmptyValue(value)) {
+      continue;
+    }
+
+    if (
+      cell.type === 'select' ||
+      cell.type === 'drop_zone' ||
+      cell.type === 'drop_expression'
+    ) {
+      if (typeof value !== 'string' || !cell.options?.includes(value)) {
+        fail('Interactive table select/drop value must be one of the cell options');
+      }
+    }
+
+    if (cell.type === 'number_input' && !isNumericValue(value)) {
+      fail('Interactive table number_input value must be numeric');
+    }
+
+    if (cell.type === 'text_input' && typeof value !== 'string') {
+      fail('Interactive table text_input value must be a string');
+    }
+  }
+
+  for (const cell of fillableCells.values()) {
+    if (cell.required && isEmptyValue(values[cell.id])) {
+      fail('Interactive table required fields cannot be empty');
     }
   }
 };
