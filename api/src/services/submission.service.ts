@@ -1,6 +1,7 @@
 import {
   AccessStatus,
   PaperStatus,
+  QuestionType,
   SubmissionStatus,
   UserRole,
   Prisma,
@@ -14,6 +15,7 @@ import {
 import { AuthenticatedUser } from '../types/user';
 import { prisma } from '../utils/prisma';
 import { HttpError } from '../utils/http-error';
+import { validateInteractiveTableAnswer } from '../validators/interactive-table.validator';
 
 const submissionListInclude = {
   student: {
@@ -45,6 +47,7 @@ const submissionPaperSelect = {
           question: true,
           marks: true,
           questionType: true,
+          template: true,
           mcqOptions: true,
           circuitTemplate: true,
           imageCompositionTemplate: true,
@@ -77,6 +80,7 @@ const submissionInclude = {
           marks: true,
           questionId: true,
           questionType: true,
+          template: true,
           mcqOptions: true,
           circuitTemplate: true,
           imageCompositionTemplate: true,
@@ -412,9 +416,9 @@ export const submissionService = {
 
     const subQuestions = await prisma.subQuestion.findMany({
       where: { questionRel: { paperId: paper.id } },
-      select: { id: true },
+      select: { id: true, questionType: true, template: true },
     });
-    const allowedIds = new Set(subQuestions.map((sub) => sub.id));
+    const subQuestionById = new Map(subQuestions.map((sub) => [sub.id, sub]));
 
     const seenSubQuestions = new Set<string>();
     for (const answer of input.answers) {
@@ -423,8 +427,13 @@ export const submissionService = {
       }
       seenSubQuestions.add(answer.subQuestionId);
 
-      if (!allowedIds.has(answer.subQuestionId)) {
+      const subQuestion = subQuestionById.get(answer.subQuestionId);
+      if (!subQuestion) {
         throw new HttpError(400, 'One or more answers reference invalid sub-questions');
+      }
+
+      if (subQuestion.questionType === QuestionType.INTERACTIVE_TABLE) {
+        validateInteractiveTableAnswer(answer.answerText, subQuestion.template);
       }
     }
 
@@ -478,7 +487,6 @@ export const submissionService = {
       where: { questionRel: { paperId: submission.paperId } },
       select: { id: true, marks: true },
     });
-
     const marksById = new Map(subQuestions.map((sub) => [sub.id, sub.marks]));
 
     for (const grade of input.grades) {
@@ -486,7 +494,8 @@ export const submissionService = {
         throw new HttpError(400, 'Invalid sub-question for grading');
       }
 
-      if (grade.assignedMarks > (marksById.get(grade.subQuestionId) ?? 0)) {
+      const maxMarks = marksById.get(grade.subQuestionId) ?? 0;
+      if (grade.assignedMarks > maxMarks) {
         throw new HttpError(400, 'Assigned marks exceed the maximum for a sub-question');
       }
     }

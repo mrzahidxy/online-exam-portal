@@ -1,7 +1,16 @@
 import { PaperStatus } from '@prisma/client';
 import { z } from 'zod';
 
-const questionTypeSchema = z.enum(['DESCRIPTIVE', 'MCQ', 'GRAPH', 'TABLE', 'CIRCUIT', 'DRAWING', 'IMAGE_COMPOSITION']);
+const questionTypeSchema = z.enum([
+  'DESCRIPTIVE',
+  'MCQ',
+  'GRAPH',
+  'TABLE',
+  'INTERACTIVE_TABLE',
+  'CIRCUIT',
+  'DRAWING',
+  'IMAGE_COMPOSITION',
+]);
 
 const mcqOptionSchema = z.object({
   label: z.string().min(1),
@@ -78,6 +87,7 @@ const subQuestionInputSchema = z
     position: z.number().int().positive(),
     questionType: questionTypeSchema.optional().default('DESCRIPTIVE'),
     mcqOptions: mcqOptionsSchema.optional(),
+    template: z.unknown().optional(),
     circuitTemplate: circuitTemplateSchema.optional(),
     imageCompositionTemplate: imageCompositionTemplateSchema.optional(),
   })
@@ -109,6 +119,7 @@ const updateSubQuestionInputSchema = z
     position: z.number().int().positive().optional(),
     questionType: questionTypeSchema.optional(),
     mcqOptions: mcqOptionsSchema.optional(),
+    template: z.unknown().optional(),
     circuitTemplate: circuitTemplateSchema.optional(),
     imageCompositionTemplate: imageCompositionTemplateSchema.optional(),
   })
@@ -123,6 +134,7 @@ const updateSubQuestionInputSchema = z
       data.position !== undefined ||
       data.questionType !== undefined ||
       data.mcqOptions !== undefined ||
+      data.template !== undefined ||
       data.circuitTemplate !== undefined ||
       data.imageCompositionTemplate !== undefined,
     { message: 'At least one sub-question field must be provided' }
