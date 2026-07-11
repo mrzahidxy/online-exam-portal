@@ -1032,12 +1032,7 @@ export default function QuestionBuilderPage({
                               <SelectItem value="MCQ">
                                 Multiple Choice (MCQ)
                               </SelectItem>
-                              <SelectItem value="GRAPH">
-                                Graph Plotting
-                              </SelectItem>
-                              <SelectItem value="TABLE">
-                                Table Answer
-                              </SelectItem>
+
                             </SelectContent>
                           </Select>
                         </div>
@@ -1154,35 +1149,6 @@ export default function QuestionBuilderPage({
                                 start.
                               </div>
                             )}
-                          </div>
-                        </div>
-                      )}
-
-                      {currentSubQuestion.type === 'GRAPH' && (
-                        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                          <div>
-                            <Label className="text-sm font-semibold text-slate-700">
-                              Graph Plotting Answer
-                            </Label>
-                            <p className="mt-1 text-xs text-slate-500">
-                              Students can plot points and draw a line on the exam graph grid.
-                            </p>
-                          </div>
-                          <p className="text-xs text-slate-500">
-                            Use the student view to place plotted answers. This editor stores the graph as structured answer data.
-                          </p>
-                        </div>
-                      )}
-
-                      {currentSubQuestion.type === 'TABLE' && (
-                        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                          <div>
-                            <Label className="text-sm font-semibold text-slate-700">
-                              Table Answer
-                            </Label>
-                            <p className="mt-1 text-xs text-slate-500">
-                              This question type uses a fixed editable table in the student view.
-                            </p>
                           </div>
                         </div>
                       )}

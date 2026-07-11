@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { authService, User } from './auth-service';
+import { authService, RegisterCredentials, User } from './auth-service';
 
 interface AuthState {
   user: User | null;
@@ -8,7 +8,7 @@ interface AuthState {
   isLoading: boolean;
   setUser: (user: User | null) => void;
   setLoading: (loading: boolean) => void;
-  register: (name: string, email: string, password: string) => Promise<void>;
+  register: (credentials: RegisterCredentials) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
@@ -16,7 +16,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       user: null,
       isAuthenticated: false,
       isLoading: false,
@@ -29,10 +29,10 @@ export const useAuthStore = create<AuthState>()(
 
       setLoading: (loading) => set({ isLoading: loading }),
 
-      register: async (name, email, password) => {
+      register: async (credentials) => {
         set({ isLoading: true });
         try {
-          const user = await authService.register({ name, email, password });
+          const user = await authService.register(credentials);
           set({
             user,
             isAuthenticated: true,
@@ -81,7 +81,7 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: true,
             isLoading: false,
           });
-        } catch (error) {
+        } catch {
           set({
             user: null,
             isAuthenticated: false,
@@ -100,13 +100,18 @@ export const useAuthStore = create<AuthState>()(
   )
 );
 
-// Helper functions to check user role
-export const isAdmin = () => {
-  const user = useAuthStore.getState().user;
-  return user?.role.toLowerCase() === 'admin';
-};
+export const getMembershipRole = (user = useAuthStore.getState().user) => user?.membership?.role;
 
-export const isStudent = () => {
-  const user = useAuthStore.getState().user;
-  return user?.role.toLowerCase() === 'student';
+export const isOwner = () => getMembershipRole() === 'OWNER';
+export const isStudent = () => getMembershipRole() === 'STUDENT';
+export const isAdmin = isOwner;
+
+export const isAccessBlocked = (user: User | null) => {
+  if (!user) return false;
+  return (
+    user.membership?.status === 'SUSPENDED' ||
+    user.activeOrganizer?.status === 'SUSPENDED' ||
+    user.activeOrganizer?.subscriptionStatus === 'EXPIRED' ||
+    user.activeOrganizer?.subscriptionStatus === 'CANCELLED'
+  );
 };

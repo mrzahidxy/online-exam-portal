@@ -26,16 +26,14 @@ export default function LoginPage() {
     try {
       await login(email, password);
 
-      // Get the user from store to check role
       const user = useAuthStore.getState().user;
 
-      // Redirect based on role
-      if (user?.role.toLowerCase() === "admin") {
-        router.push("/admin/questions");
-      } else if (user?.role.toLowerCase() === "student") {
-        router.push("/student/assessments");
+      if (user?.membership?.role === "OWNER") {
+        router.push("/admin/papers");
+      } else if (user?.membership?.role === "STUDENT") {
+        router.push("/student/dashboard");
       } else {
-        router.push("/admin/questions"); // Default fallback
+        router.push("/auth/login");
       }
     } catch (err: any) {
       setError(err.response?.data?.message || "Invalid credentials");
@@ -48,9 +46,9 @@ export default function LoginPage() {
         <Card className="w-full max-w-md p-8">
           <div className="text-center mb-6">
             <Settings className="w-12 h-12 text-primary mx-auto mb-3" />
-            <h1 className="text-2xl font-bold">Admin Login</h1>
+            <h1 className="text-2xl font-bold">Owner Login</h1>
             <p className="text-muted-foreground text-sm">
-              Sign in to manage assessments
+              Sign in to manage your organization assessments
             </p>
           </div>
 
@@ -112,7 +110,7 @@ export default function LoginPage() {
               onClick={() => setView("select")}
               disabled={isLoading}
             >
-              Back to role selection
+              Back to login options
             </Button>
           </form>
         </Card>
@@ -214,7 +212,7 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           <BookOpen className="w-8 h-8 text-primary mx-auto mb-3" />
           <h1 className="text-3xl font-bold mb-2">e-Assessment</h1>
-          <p className="text-muted-foreground">Choose your role</p>
+          <p className="text-muted-foreground">Choose your login option</p>
         </div>
 
         <div className="space-y-3">
@@ -231,7 +229,7 @@ export default function LoginPage() {
             className="w-full h-12 flex items-center justify-center gap-3"
           >
             <Settings className="w-5 h-5" />
-            Admin Login
+            Owner Login
           </Button>
         </div>
       </div>

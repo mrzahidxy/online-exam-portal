@@ -24,7 +24,7 @@ export default async function ProfilePage() {
             <p className="text-sm text-muted-foreground">{user.email}</p>
           </div>
           <Badge variant="secondary" className="capitalize">
-            {user.role}
+            {(user as any).membership?.role ?? user.role}
           </Badge>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
@@ -34,7 +34,7 @@ export default async function ProfilePage() {
           </div>
           <div className="rounded-lg border border-border p-3">
             <p className="text-xs uppercase text-muted-foreground tracking-wide">Role</p>
-            <p className="font-semibold text-foreground capitalize">{user.role}</p>
+            <p className="font-semibold text-foreground capitalize">{(user as any).membership?.role ?? user.role}</p>
           </div>
         </div>
         {!profile.success && (

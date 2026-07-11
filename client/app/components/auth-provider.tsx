@@ -1,48 +1,63 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useAuthStore } from "@/lib/auth-store";
+import { isAccessBlocked, useAuthStore } from "@/lib/auth-store";
+
+const BlockedAccess = ({ message }: { message: string }) => (
+  <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="max-w-md rounded-lg border bg-card p-6 text-center shadow-sm">
+      <h1 className="text-xl font-semibold mb-2">Access unavailable</h1>
+      <p className="text-sm text-muted-foreground">{message}</p>
+    </div>
+  </div>
+);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { checkAuth, isAuthenticated, user, isLoading } = useAuthStore();
   const hasCheckedAuth = useRef(false);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  const isProtectedRoute = pathname.startsWith("/admin") || pathname.startsWith("/student");
 
   useEffect(() => {
-    const isProtectedRoute =
-      pathname.startsWith("/admin") || pathname.startsWith("/student");
-
-    // Only check auth once on protected routes when not authenticated and not already loading
-    if (
-      isProtectedRoute &&
-      !isAuthenticated &&
-      !isLoading &&
-      !hasCheckedAuth.current
-    ) {
-      hasCheckedAuth.current = true;
-      checkAuth().finally(() => {
-        hasCheckedAuth.current = false;
-      });
-    }
-
-    // Reset check flag when leaving protected routes
     if (!isProtectedRoute) {
       hasCheckedAuth.current = false;
+      setAuthChecked(false);
+      return;
     }
 
-    // Redirect if user is on wrong dashboard
-    if (isAuthenticated && user) {
-      const userRole = user.role.toLowerCase();
-
-      if (userRole === "admin" && pathname.startsWith("/student")) {
-        router.push("/admin/questions");
-      } else if (userRole === "student" && pathname.startsWith("/admin")) {
-        router.push("/student/assessments");
-      }
+    if (!isAuthenticated && !isLoading && !hasCheckedAuth.current) {
+      hasCheckedAuth.current = true;
+      checkAuth().finally(() => setAuthChecked(true));
+    } else if (isAuthenticated) {
+      setAuthChecked(true);
     }
-  }, [pathname, isAuthenticated, user, checkAuth, router, isLoading]);
+  }, [isProtectedRoute, isAuthenticated, checkAuth, isLoading]);
+
+  useEffect(() => {
+    if (isProtectedRoute && authChecked && !isAuthenticated && !isLoading) {
+      router.push("/auth/login");
+    }
+  }, [isProtectedRoute, authChecked, isAuthenticated, isLoading, router]);
+
+  if (isProtectedRoute && (isLoading || (!isAuthenticated && !authChecked))) {
+    return <BlockedAccess message="Checking your access..." />;
+  }
+
+  if (isProtectedRoute && user && isAccessBlocked(user)) {
+    return <BlockedAccess message="Your organization, subscription, or membership is not active. Please contact your organizer." />;
+  }
+
+  if (pathname.startsWith("/admin") && user?.membership?.role !== "OWNER") {
+    return <BlockedAccess message="Owner access is required for this area." />;
+  }
+
+  if (pathname.startsWith("/student") && user?.membership?.role !== "STUDENT") {
+    return <BlockedAccess message="Student access is required for this area." />;
+  }
 
   return <>{children}</>;
 }
