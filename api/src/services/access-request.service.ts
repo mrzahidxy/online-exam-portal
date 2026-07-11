@@ -1,4 +1,4 @@
-import { AccessStatus, PaperStatus, Prisma, UserRole } from '@prisma/client';
+import { AccessStatus, OrganizerRole, PaperStatus, Prisma } from '@prisma/client';
 
 import {
   CreateAccessRequestInput,
@@ -31,10 +31,10 @@ const normalizePagination = (page = DEFAULT_PAGE, limit = DEFAULT_LIMIT) => {
 };
 
 export const accessRequestService = {
-  create: async (studentId: string, input: CreateAccessRequestInput) => {
-    const paper = await prisma.questionPaper.findUnique({
-      where: { id: input.paperId },
-      select: { id: true, status: true, startDate: true },
+  create: async (actor: AuthenticatedUser, input: CreateAccessRequestInput) => {
+    const paper = await prisma.questionPaper.findFirst({
+      where: { id: input.paperId, organizerId: actor.activeOrganizerId },
+      select: { id: true, organizerId: true, status: true, startDate: true },
     });
 
     if (!paper || paper.status !== PaperStatus.PUBLISHED) {
@@ -44,7 +44,7 @@ export const accessRequestService = {
     const existing = await prisma.accessRequest.findUnique({
       where: {
         studentId_paperId: {
-          studentId,
+          studentId: actor.id,
           paperId: input.paperId,
         },
       },
@@ -68,7 +68,8 @@ export const accessRequestService = {
 
     return prisma.accessRequest.create({
       data: {
-        studentId,
+        organizerId: actor.activeOrganizerId!,
+        studentId: actor.id,
         paperId: input.paperId,
       },
       include: requestInclude,
@@ -80,13 +81,15 @@ export const accessRequestService = {
     const skip = (page - 1) * limit;
 
     const where: Prisma.AccessRequestWhereInput =
-      actor.role === UserRole.ADMIN
+      actor.organizerRole === OrganizerRole.OWNER
         ? {
+            organizerId: actor.activeOrganizerId,
             ...(query?.status ? { status: query.status } : {}),
             ...(query?.paperId ? { paperId: query.paperId } : {}),
             ...(query?.studentId ? { studentId: query.studentId } : {}),
           }
         : {
+            organizerId: actor.activeOrganizerId,
             studentId: actor.id,
             ...(query?.status ? { status: query.status } : {}),
             ...(query?.paperId ? { paperId: query.paperId } : {}),
@@ -115,12 +118,12 @@ export const accessRequestService = {
   },
 
   updateStatus: async (actor: AuthenticatedUser, requestId: string, input: UpdateAccessRequestInput) => {
-    if (actor.role !== UserRole.ADMIN) {
-      throw new HttpError(403, 'Only admins can update access requests');
+    if (actor.organizerRole !== OrganizerRole.OWNER) {
+      throw new HttpError(403, 'Only owners can update access requests');
     }
 
-    const request = await prisma.accessRequest.findUnique({
-      where: { id: requestId },
+    const request = await prisma.accessRequest.findFirst({
+      where: { id: requestId, organizerId: actor.activeOrganizerId },
       include: requestInclude,
     });
 

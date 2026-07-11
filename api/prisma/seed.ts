@@ -1,9 +1,10 @@
 import {
   AccessStatus,
+  OrganizerRole,
   PaperStatus,
+  PlatformRole,
   PrismaClient,
   SubmissionStatus,
-  UserRole,
 } from '@prisma/client';
 
 import { hashPassword } from '../src/utils/password';
@@ -70,7 +71,7 @@ async function upsertUser({
 }: {
   email: string;
   name: string;
-  role: UserRole;
+  role: OrganizerRole;
   password: string;
   schoolCode?: string;
 }) {
@@ -79,27 +80,28 @@ async function upsertUser({
     where: { email },
     update: {
       name,
-      role,
+      platformRole: PlatformRole.USER,
       schoolCode,
     },
     create: {
       email,
       name,
-      role,
+      platformRole: PlatformRole.USER,
       schoolCode,
       passwordHash,
     },
   });
 }
 
-async function upsertPaper(adminId: string, seed: PaperSeed) {
+async function upsertPaper(adminId: string, organizerId: string, seed: PaperSeed) {
   const existing = await prisma.questionPaper.findFirst({
-    where: { title: seed.title },
+    where: { title: seed.title, organizerId },
   });
 
   if (!existing) {
     return prisma.questionPaper.create({
       data: {
+        organizerId,
         title: seed.title,
         description: seed.description,
         durationMinutes: seed.durationMinutes,
@@ -180,8 +182,8 @@ async function upsertSubQuestion(questionId: string, seed: SubQuestionSeed) {
   });
 }
 
-async function seedPaper(adminId: string, seed: PaperSeed) {
-  const paper = await upsertPaper(adminId, seed);
+async function seedPaper(adminId: string, organizerId: string, seed: PaperSeed) {
+  const paper = await upsertPaper(adminId, organizerId, seed);
 
   for (const questionSeed of seed.questions) {
     const question = await upsertQuestion(paper.id, questionSeed);
@@ -222,11 +224,13 @@ async function upsertAccessRequest({
   paperId,
   status,
   decidedById,
+  organizerId,
 }: {
   studentId: string;
   paperId: string;
   status: AccessStatus;
   decidedById?: string | null;
+  organizerId: string;
 }) {
   return prisma.accessRequest.upsert({
     where: {
@@ -236,11 +240,13 @@ async function upsertAccessRequest({
       },
     },
     update: {
+      organizerId,
       status,
       decidedById: decidedById ?? null,
       decidedAt: decidedById ? new Date() : null,
     },
     create: {
+      organizerId,
       studentId,
       paperId,
       status,
@@ -254,10 +260,12 @@ async function upsertSubmission({
   studentId,
   paperId,
   status,
+  organizerId,
 }: {
   studentId: string;
   paperId: string;
   status: SubmissionStatus;
+  organizerId: string;
 }) {
   return prisma.submission.upsert({
     where: {
@@ -267,10 +275,12 @@ async function upsertSubmission({
       },
     },
     update: {
+      organizerId,
       status,
       submittedAt: new Date(),
     },
     create: {
+      organizerId,
       studentId,
       paperId,
       status,
@@ -344,10 +354,16 @@ async function seedSubmissionAnswersAndGrades({
 }
 
 async function main() {
+  const organizer = await prisma.organizer.upsert({
+    where: { slug: 'default' },
+    update: { name: 'Default Organizer' },
+    create: { name: 'Default Organizer', slug: 'default' },
+  });
+
   const admin = await upsertUser({
     email: 'admin@exam.io',
     name: 'Exam Admin',
-    role: UserRole.ADMIN,
+    role: OrganizerRole.OWNER,
     password: 'changeMeAdmin1!',
   });
 
@@ -355,7 +371,7 @@ async function main() {
     email: 'student1@exam.io',
     name: 'Jane Student',
     schoolCode: 'SCHOOL-001',
-    role: UserRole.STUDENT,
+    role: OrganizerRole.STUDENT,
     password: 'changeMeStudent1!',
   });
 
@@ -363,12 +379,25 @@ async function main() {
     email: 'student2@exam.io',
     name: 'John Candidate',
     schoolCode: 'SCHOOL-002',
-    role: UserRole.STUDENT,
+    role: OrganizerRole.STUDENT,
     password: 'changeMeStudent2!',
   });
 
+  await prisma.organizerMembership.upsert({
+    where: { userId_organizerId: { userId: admin.id, organizerId: organizer.id } },
+    update: { role: OrganizerRole.OWNER },
+    create: { organizerId: organizer.id, userId: admin.id, role: OrganizerRole.OWNER },
+  });
+  for (const student of [studentA, studentB]) {
+    await prisma.organizerMembership.upsert({
+      where: { userId_organizerId: { userId: student.id, organizerId: organizer.id } },
+      update: { role: OrganizerRole.STUDENT },
+      create: { organizerId: organizer.id, userId: student.id, role: OrganizerRole.STUDENT },
+    });
+  }
+
   const now = new Date();
-  const runningPaper = await seedPaper(admin.id, {
+  const runningPaper = await seedPaper(admin.id, organizer.id, {
     title: 'Mathematics Running Paper',
     description: 'Live exam window for testing active submissions',
     durationMinutes: 90,
@@ -440,7 +469,7 @@ async function main() {
     ],
   });
 
-  const upcomingPaper = await seedPaper(admin.id, {
+  const upcomingPaper = await seedPaper(admin.id, organizer.id, {
     title: 'Physics Upcoming Paper',
     description: 'Future exam window for testing upcoming assessment states',
     durationMinutes: 60,
@@ -496,6 +525,7 @@ async function main() {
     paperId: runningPaper.id,
     status: AccessStatus.APPROVED,
     decidedById: admin.id,
+    organizerId: organizer.id,
   });
 
   await upsertAccessRequest({
@@ -503,6 +533,7 @@ async function main() {
     paperId: runningPaper.id,
     status: AccessStatus.APPROVED,
     decidedById: admin.id,
+    organizerId: organizer.id,
   });
 
   await upsertAccessRequest({
@@ -510,12 +541,14 @@ async function main() {
     paperId: upcomingPaper.id,
     status: AccessStatus.APPROVED,
     decidedById: admin.id,
+    organizerId: organizer.id,
   });
 
   await upsertAccessRequest({
     studentId: studentB.id,
     paperId: upcomingPaper.id,
     status: AccessStatus.PENDING,
+    organizerId: organizer.id,
   });
 
   const runningSubQuestions = await getPaperSubQuestions(runningPaper.id);
@@ -524,6 +557,7 @@ async function main() {
     studentId: studentA.id,
     paperId: runningPaper.id,
     status: SubmissionStatus.REVIEWED,
+    organizerId: organizer.id,
   });
   await seedSubmissionAnswersAndGrades({
     submissionId: reviewedSubmission.id,
@@ -536,6 +570,7 @@ async function main() {
     studentId: studentB.id,
     paperId: runningPaper.id,
     status: SubmissionStatus.SUBMITTED,
+    organizerId: organizer.id,
   });
   await seedSubmissionAnswersAndGrades({
     submissionId: pendingSubmission.id,

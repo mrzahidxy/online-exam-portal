@@ -1,88 +1,140 @@
-import { UserRole } from '@prisma/client';
+import { MembershipStatus, OrganizerRole, OrganizerStatus, PlatformRole, SubscriptionStatus } from '@prisma/client';
 import { NextFunction, Response } from 'express';
 
 import { verifyAccessToken } from '../utils/jwt';
 import { prisma } from '../utils/prisma';
 import { env } from '../utils/env';
 import type { AuthenticatedRequest } from '../types/http';
-import type { SanitizedUser } from '../types/user';
 import { HttpError } from '../utils/http-error';
 
-type GuardOptions = UserRole[] | { roles?: UserRole[] };
+const allowedSubscriptionStatuses = new Set<SubscriptionStatus>([
+  SubscriptionStatus.TRIAL,
+  SubscriptionStatus.ACTIVE,
+]);
 
-const normalizeUser = (user: SanitizedUser): SanitizedUser => ({
-  ...user,
-  roles: user.roles ?? [user.role],
-  schoolCode: user.schoolCode ?? null,
-});
+export const requireAuth = () => async (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
+  try {
+    let token: string | undefined;
 
-const normalizeOptions = (allowed?: GuardOptions): { roles?: UserRole[] } => {
-  if (!allowed) return {};
-  if (Array.isArray(allowed)) {
-    return { roles: allowed };
+    const cookieToken = req.cookies?.[env.ACCESS_TOKEN_COOKIE_NAME];
+    if (cookieToken) {
+      token = cookieToken;
+    } else {
+      const header = req.headers.authorization;
+      if (header?.startsWith('Bearer ')) {
+        token = header.replace('Bearer ', '').trim();
+      }
+    }
+
+    if (!token) {
+      throw new HttpError(401, 'Authentication token missing');
+    }
+
+    const payload = verifyAccessToken(token);
+    const dbUser = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        platformRole: true,
+        schoolCode: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!dbUser) {
+      throw new HttpError(401, 'User could not be found');
+    }
+
+    req.auth = payload;
+    req.user = {
+      ...dbUser,
+      schoolCode: dbUser.schoolCode ?? null,
+      organizerId: payload.organizerId ?? payload.activeOrganizerId,
+      activeOrganizerId: payload.activeOrganizerId ?? payload.organizerId,
+      membershipId: payload.membershipId,
+      membershipRole: payload.membershipRole ?? payload.organizerRole,
+      organizerRole: payload.organizerRole ?? payload.membershipRole,
+      membershipStatus: payload.membershipStatus,
+    };
+    next();
+  } catch (error) {
+    next(error);
   }
-  return allowed;
 };
 
-export const requireAuth =
-  (allowed?: GuardOptions) => async (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
-    try {
-      // Try to get token from cookie first, then fallback to Authorization header
-      let token: string | undefined;
-      
-      const cookieToken = req.cookies?.[env.ACCESS_TOKEN_COOKIE_NAME];
-      if (cookieToken) {
-        token = cookieToken;
-      } else {
-        const header = req.headers.authorization;
-        if (header?.startsWith('Bearer ')) {
-          token = header.replace('Bearer ', '').trim();
-        }
-      }
-
-      if (!token) {
-        throw new HttpError(401, 'Authentication token missing');
-      }
-
-      const payload = verifyAccessToken(token);
-      const guard = normalizeOptions(allowed);
-
-      const dbUser = await prisma.user.findUnique({
-        where: { id: payload.userId },
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          role: true,
-          schoolCode: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      });
-
-      if (!dbUser) {
-        throw new HttpError(401, 'User could not be found');
-      }
-
-      const effectiveRoles = (payload.roles ?? []).length > 0 ? payload.roles : [dbUser.role];
-
-      const userWithRoles = normalizeUser({
-        ...(dbUser as SanitizedUser),
-        roles: effectiveRoles,
-      });
-
-      const hasRole =
-        !guard.roles ||
-        guard.roles.some((role) => effectiveRoles.includes(role) || userWithRoles.roles.includes(role));
-
-      if (!hasRole) {
-        throw new HttpError(403, 'You do not have permission to access this resource');
-      }
-
-      req.user = userWithRoles;
-      req.auth = { ...payload, roles: effectiveRoles };
-      next();
-    } catch (error) {
-      next(error);
+export const requireOrganizerMembership = () => async (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
+  try {
+    if (!req.user || !req.auth) {
+      throw new HttpError(401, 'Unauthorized');
     }
-  };
+
+    if (req.user.platformRole === PlatformRole.ADMIN) {
+      throw new HttpError(403, 'Platform admins do not have organizer assessment access');
+    }
+
+    const organizerId = req.auth.organizerId ?? req.auth.activeOrganizerId;
+    if (!organizerId || !req.auth.membershipId) {
+      throw new HttpError(403, 'Organizer membership required');
+    }
+
+    const membership = await prisma.organizerMembership.findFirst({
+      where: {
+        id: req.auth.membershipId,
+        userId: req.user.id,
+        organizerId,
+      },
+      include: { organizer: true },
+    });
+
+    if (!membership) {
+      throw new HttpError(403, 'Organizer membership required');
+    }
+
+    req.organizer = {
+      organizerId: membership.organizerId,
+      membershipId: membership.id,
+      organizerRole: membership.role,
+      membershipStatus: membership.status,
+      organizerStatus: membership.organizer.status,
+      subscriptionStatus: membership.organizer.subscriptionStatus,
+    };
+
+    req.user.organizerId = membership.organizerId;
+    req.user.activeOrganizerId = membership.organizerId;
+    req.user.membershipId = membership.id;
+    req.user.membershipRole = membership.role;
+    req.user.organizerRole = membership.role;
+    req.user.membershipStatus = membership.status;
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const requireOrganizerRole = (role: OrganizerRole) => (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
+  if (!req.organizer) return next(new HttpError(403, 'Organizer membership required'));
+  if (req.organizer.organizerRole !== role) {
+    return next(new HttpError(403, 'Insufficient organizer permissions'));
+  }
+  next();
+};
+
+export const requireOwner = () => requireOrganizerRole(OrganizerRole.OWNER);
+export const requireStudent = () => requireOrganizerRole(OrganizerRole.STUDENT);
+
+export const requireActiveOrganizer = () => (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
+  if (!req.organizer) return next(new HttpError(403, 'Organizer membership required'));
+  if (req.organizer.membershipStatus !== MembershipStatus.ACTIVE) {
+    return next(new HttpError(403, 'Organizer membership is suspended'));
+  }
+  if (req.organizer.organizerStatus !== OrganizerStatus.ACTIVE) {
+    return next(new HttpError(403, 'Organizer is suspended'));
+  }
+  if (!allowedSubscriptionStatuses.has(req.organizer.subscriptionStatus)) {
+    return next(new HttpError(403, 'Organizer subscription does not permit access'));
+  }
+  next();
+};

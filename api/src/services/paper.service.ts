@@ -1,4 +1,4 @@
-import { AccessStatus, PaperStatus, Prisma, UserRole } from '@prisma/client';
+import { AccessStatus, OrganizerRole, PaperStatus, Prisma } from '@prisma/client';
 
 import {
   CreatePaperInput,
@@ -115,7 +115,7 @@ const listWhere = (
   actor: AuthenticatedUser,
   query?: ListPapersQuery
 ): Prisma.QuestionPaperWhereInput => {
-  const where: Prisma.QuestionPaperWhereInput = {};
+  const where: Prisma.QuestionPaperWhereInput = { organizerId: actor.activeOrganizerId };
 
   if (query?.search) {
     where.OR = [
@@ -138,7 +138,7 @@ const listWhere = (
     }
   }
 
-  if (actor.role === UserRole.STUDENT) {
+  if (actor.organizerRole === OrganizerRole.STUDENT) {
     where.status = PaperStatus.PUBLISHED;
     // Students can see all published papers, not just ones they have access to
     // Access control is handled at the individual paper level and in the UI
@@ -147,9 +147,9 @@ const listWhere = (
   return where;
 };
 
-const assertNoSubmissions = async (paperId: string) => {
+const assertNoSubmissions = async (organizerId: string, paperId: string) => {
   const submission = await prisma.submission.findFirst({
-    where: { paperId },
+    where: { organizerId, paperId },
     select: { id: true },
   });
 
@@ -304,10 +304,11 @@ export const paperService = {
 
     let responsePapers: PaperListItem[] = papers;
 
-    if (actor.role === UserRole.STUDENT && papers.length > 0) {
+    if (actor.organizerRole === OrganizerRole.STUDENT && papers.length > 0) {
       const [accessRequests, submissions] = await prisma.$transaction([
         prisma.accessRequest.findMany({
           where: {
+            organizerId: actor.activeOrganizerId,
             studentId: actor.id,
             paperId: { in: papers.map((paper) => paper.id) },
           },
@@ -315,6 +316,7 @@ export const paperService = {
         }),
         prisma.submission.findMany({
           where: {
+            organizerId: actor.activeOrganizerId,
             studentId: actor.id,
             paperId: { in: papers.map((paper) => paper.id) },
           },
@@ -349,8 +351,8 @@ export const paperService = {
   },
 
   getById: async (actor: AuthenticatedUser, paperId: string) => {
-    const paper = await prisma.questionPaper.findUnique({
-      where: { id: paperId },
+    const paper = await prisma.questionPaper.findFirst({
+      where: { id: paperId, organizerId: actor.activeOrganizerId },
       include: paperDetailInclude,
     });
 
@@ -358,9 +360,10 @@ export const paperService = {
       throw new HttpError(404, 'Question paper not found');
     }
 
-    if (actor.role !== UserRole.ADMIN) {
+    if (actor.organizerRole !== OrganizerRole.OWNER) {
       const hasAccess = await prisma.accessRequest.findFirst({
         where: {
+          organizerId: actor.activeOrganizerId,
           paperId,
           studentId: actor.id,
           status: AccessStatus.APPROVED,
@@ -376,14 +379,15 @@ export const paperService = {
   },
 
   create: async (actor: AuthenticatedUser, input: CreatePaperInput) => {
-    if (actor.role !== UserRole.ADMIN) {
-      throw new HttpError(403, 'Only admins can create question papers');
+    if (actor.organizerRole !== OrganizerRole.OWNER) {
+      throw new HttpError(403, 'Only owners can create question papers');
     }
 
     validateDates(input.startDate, input.endDate);
 
     return prisma.questionPaper.create({
       data: {
+        organizerId: actor.activeOrganizerId!,
         title: input.title,
         description: input.description,
         durationMinutes: input.durationMinutes,
@@ -404,12 +408,12 @@ export const paperService = {
     paperId: string,
     input: UpdatePaperInput
   ) => {
-    if (actor.role !== UserRole.ADMIN) {
-      throw new HttpError(403, 'Only admins can update question papers');
+    if (actor.organizerRole !== OrganizerRole.OWNER) {
+      throw new HttpError(403, 'Only owners can update question papers');
     }
 
-    const existing = await prisma.questionPaper.findUnique({
-      where: { id: paperId },
+    const existing = await prisma.questionPaper.findFirst({
+      where: { id: paperId, organizerId: actor.activeOrganizerId },
     });
     if (!existing) {
       throw new HttpError(404, 'Question paper not found');
@@ -448,18 +452,18 @@ export const paperService = {
     paperId: string,
     inputs: CreateQuestionsInput
   ) => {
-    if (actor.role !== UserRole.ADMIN) {
-      throw new HttpError(403, 'Only admins can modify questions');
+    if (actor.organizerRole !== OrganizerRole.OWNER) {
+      throw new HttpError(403, 'Only owners can modify questions');
     }
 
-    const paper = await prisma.questionPaper.findUnique({
-      where: { id: paperId },
+    const paper = await prisma.questionPaper.findFirst({
+      where: { id: paperId, organizerId: actor.activeOrganizerId },
     });
     if (!paper) {
       throw new HttpError(404, 'Question paper not found');
     }
 
-    await assertNoSubmissions(paperId);
+    await assertNoSubmissions(actor.activeOrganizerId!, paperId);
 
     // Enforce unique positions in the incoming payload and against existing questions.
     const inputPositions = inputs.map((q) => q.position);
@@ -517,8 +521,8 @@ export const paperService = {
       )
     );
 
-    return prisma.questionPaper.findUniqueOrThrow({
-      where: { id: paperId },
+    return prisma.questionPaper.findFirstOrThrow({
+      where: { id: paperId, organizerId: actor.activeOrganizerId },
       include: paperDetailInclude,
     });
   },
@@ -528,18 +532,18 @@ export const paperService = {
     paperId: string,
     inputs: UpdateQuestionsInput
   ) => {
-    if (actor.role !== UserRole.ADMIN) {
-      throw new HttpError(403, 'Only admins can modify questions');
+    if (actor.organizerRole !== OrganizerRole.OWNER) {
+      throw new HttpError(403, 'Only owners can modify questions');
     }
 
-    const paper = await prisma.questionPaper.findUnique({
-      where: { id: paperId },
+    const paper = await prisma.questionPaper.findFirst({
+      where: { id: paperId, organizerId: actor.activeOrganizerId },
     });
     if (!paper) {
       throw new HttpError(404, 'Question paper not found');
     }
 
-    await assertNoSubmissions(paperId);
+    await assertNoSubmissions(actor.activeOrganizerId!, paperId);
 
     const existingQuestions: QuestionWithSubQuestions[] =
       await prisma.question.findMany({
@@ -686,8 +690,8 @@ export const paperService = {
       }
     });
 
-    return prisma.questionPaper.findUniqueOrThrow({
-      where: { id: paperId },
+    return prisma.questionPaper.findFirstOrThrow({
+      where: { id: paperId, organizerId: actor.activeOrganizerId },
       include: paperDetailInclude,
     });
   },

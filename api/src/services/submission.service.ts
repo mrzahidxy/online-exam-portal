@@ -1,8 +1,8 @@
 import {
   AccessStatus,
+  OrganizerRole,
   PaperStatus,
   SubmissionStatus,
-  UserRole,
   Prisma,
 } from '@prisma/client';
 
@@ -197,13 +197,12 @@ const normalizePagination = (page = DEFAULT_PAGE, limit = DEFAULT_LIMIT) => {
   return { page: safePage, limit: safeLimit };
 };
 
-const ensureStudentAccess = async (studentId: string, paperId: string) => {
-  const request = await prisma.accessRequest.findUnique({
+const ensureStudentAccess = async (organizerId: string, studentId: string, paperId: string) => {
+  const request = await prisma.accessRequest.findFirst({
     where: {
-      studentId_paperId: {
-        studentId,
-        paperId,
-      },
+      organizerId,
+      studentId,
+      paperId,
     },
   });
 
@@ -236,9 +235,9 @@ const filterForActor = (
   actor: AuthenticatedUser,
   query?: ListSubmissionsQuery
 ): Prisma.SubmissionWhereInput => {
-  const where: Prisma.SubmissionWhereInput = {};
+  const where: Prisma.SubmissionWhereInput = { organizerId: actor.activeOrganizerId };
 
-  if (actor.role === UserRole.STUDENT) {
+  if (actor.organizerRole === OrganizerRole.STUDENT) {
     where.studentId = actor.id;
   } else if (query?.studentId) {
     where.studentId = query.studentId;
@@ -290,8 +289,8 @@ export const submissionService = {
     actor: AuthenticatedUser,
     submissionId: string
   ): Promise<SubmissionDetailResponse> => {
-    const submission = await prisma.submission.findUnique({
-      where: { id: submissionId },
+    const submission = await prisma.submission.findFirst({
+      where: { id: submissionId, organizerId: actor.activeOrganizerId },
       include: submissionDetailInclude,
     });
 
@@ -299,7 +298,7 @@ export const submissionService = {
       throw new HttpError(404, 'Submission not found');
     }
 
-    if (actor.role !== UserRole.ADMIN && submission.studentId !== actor.id) {
+    if (actor.organizerRole !== OrganizerRole.OWNER && submission.studentId !== actor.id) {
       throw new HttpError(403, 'You do not have access to this submission');
     }
 
@@ -371,12 +370,12 @@ export const submissionService = {
     actor: AuthenticatedUser,
     input: CreateSubmissionInput
   ): Promise<SubmissionResponse> => {
-    if (actor.role !== UserRole.STUDENT) {
+    if (actor.organizerRole !== OrganizerRole.STUDENT) {
       throw new HttpError(403, 'Only students can submit answers');
     }
 
-    const paper = await prisma.questionPaper.findUnique({
-      where: { id: input.paperId },
+    const paper = await prisma.questionPaper.findFirst({
+      where: { id: input.paperId, organizerId: actor.activeOrganizerId },
       select: {
         id: true,
         status: true,
@@ -390,15 +389,14 @@ export const submissionService = {
       throw new HttpError(400, 'Paper is not available for submissions');
     }
 
-    await ensureStudentAccess(actor.id, paper.id);
+    await ensureStudentAccess(actor.activeOrganizerId!, actor.id, paper.id);
     validatePaperWindow(paper);
 
-    const existingSubmission = await prisma.submission.findUnique({
+    const existingSubmission = await prisma.submission.findFirst({
       where: {
-        studentId_paperId: {
-          studentId: actor.id,
-          paperId: paper.id,
-        },
+        organizerId: actor.activeOrganizerId,
+        studentId: actor.id,
+        paperId: paper.id,
       },
     });
 
@@ -427,6 +425,7 @@ export const submissionService = {
     const submission = await prisma.$transaction(async (tx) => {
       const created = await tx.submission.create({
         data: {
+          organizerId: actor.activeOrganizerId!,
           studentId: actor.id,
           paperId: paper.id,
         },
@@ -443,8 +442,8 @@ export const submissionService = {
       return created;
     });
 
-    return prisma.submission.findUniqueOrThrow({
-      where: { id: submission.id },
+    return prisma.submission.findFirstOrThrow({
+      where: { id: submission.id, organizerId: actor.activeOrganizerId },
       include: submissionInclude,
     });
   },
@@ -454,12 +453,12 @@ export const submissionService = {
     submissionId: string,
     input: GradeSubmissionInput
   ): Promise<SubmissionResponse> => {
-    if (actor.role !== UserRole.ADMIN) {
-      throw new HttpError(403, 'Only admins can grade submissions');
+    if (actor.organizerRole !== OrganizerRole.OWNER) {
+      throw new HttpError(403, 'Only owners can grade submissions');
     }
 
-    const submission = await prisma.submission.findUnique({
-      where: { id: submissionId },
+    const submission = await prisma.submission.findFirst({
+      where: { id: submissionId, organizerId: actor.activeOrganizerId },
       select: {
         id: true,
         paperId: true,
@@ -487,61 +486,64 @@ export const submissionService = {
       }
     }
 
-    await prisma.$transaction(async (tx) => {
-      for (const grade of input.grades) {
-        const updateData: Prisma.GradeUpdateInput = {
-          assignedMarks: grade.assignedMarks,
-          gradedBy: {
-            connect: {
-              id: actor.id,
-            },
-          },
-        };
-
-        if (grade.comment !== undefined) {
-          updateData.comment = grade.comment;
-        }
-
-        await tx.grade.upsert({
-          where: {
-            submissionId_subQuestionId: {
-              submissionId,
-              subQuestionId: grade.subQuestionId,
-            },
-          },
-          update: updateData,
-          create: {
-            submission: {
-              connect: {
-                id: submissionId,
-              },
-            },
-            subQuestion: {
-              connect: {
-                id: grade.subQuestionId,
-              },
-            },
+    await prisma.$transaction(
+      async (tx) => {
+        for (const grade of input.grades) {
+          const updateData: Prisma.GradeUpdateInput = {
             assignedMarks: grade.assignedMarks,
             gradedBy: {
               connect: {
                 id: actor.id,
               },
             },
-            comment: grade.comment ?? null,
+          };
+
+          if (grade.comment !== undefined) {
+            updateData.comment = grade.comment;
+          }
+
+          await tx.grade.upsert({
+            where: {
+              submissionId_subQuestionId: {
+                submissionId,
+                subQuestionId: grade.subQuestionId,
+              },
+            },
+            update: updateData,
+            create: {
+              submission: {
+                connect: {
+                  id: submissionId,
+                },
+              },
+              subQuestion: {
+                connect: {
+                  id: grade.subQuestionId,
+                },
+              },
+              assignedMarks: grade.assignedMarks,
+              gradedBy: {
+                connect: {
+                  id: actor.id,
+                },
+              },
+              comment: grade.comment ?? null,
+            },
+          });
+        }
+
+        await tx.submission.update({
+          where: { id: submissionId },
+          data: {
+            status: SubmissionStatus.REVIEWED,
           },
         });
-      }
+      },
+      { maxWait: 10000, timeout: 30000 }
+    );
 
-      await tx.submission.update({
-        where: { id: submissionId },
-        data: {
-          status: SubmissionStatus.REVIEWED,
-        },
-      });
-    });
-
-    return prisma.submission.findUniqueOrThrow({
-      where: { id: submissionId },
+    return prisma.submission.findFirstOrThrow({
+      where: { id: submissionId, organizerId: actor.activeOrganizerId },
       include: submissionInclude,
     });
   },

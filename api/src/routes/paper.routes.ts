@@ -1,8 +1,8 @@
-import { UserRole } from '@prisma/client';
+import { OrganizerRole } from '@prisma/client';
 import { Router } from 'express';
 
 import { paperController } from '../controllers/paper.controller';
-import { requireAuth } from '../middleware/auth.middleware';
+import { requireActiveOrganizer, requireAuth, requireOrganizerMembership, requireOrganizerRole } from '../middleware/auth.middleware';
 import { validateRequest } from '../middleware/validation.middleware';
 import {
   createPaperSchema,
@@ -14,16 +14,18 @@ import {
 } from '../schemas/paper.schema';
 
 const router = Router();
+const organizerAccess = [requireAuth(), requireOrganizerMembership(), requireActiveOrganizer()];
+const ownerAccess = [...organizerAccess, requireOrganizerRole(OrganizerRole.OWNER)];
 
-router.get('/', requireAuth(), validateRequest(listPapersQuerySchema, 'query'), paperController.list);
+router.get('/', ...organizerAccess, validateRequest(listPapersQuerySchema, 'query'), paperController.list);
 
-router.get('/:paperId', requireAuth(), validateRequest(paperIdParamSchema, 'params'), paperController.getById);
+router.get('/:paperId', ...organizerAccess, validateRequest(paperIdParamSchema, 'params'), paperController.getById);
 
-router.post('/', requireAuth([UserRole.ADMIN]), validateRequest(createPaperSchema), paperController.create);
+router.post('/', ...ownerAccess, validateRequest(createPaperSchema), paperController.create);
 
 router.patch(
   '/:paperId',
-  requireAuth([UserRole.ADMIN]),
+  ...ownerAccess,
   validateRequest(paperIdParamSchema, 'params'),
   validateRequest(updatePaperSchema),
   paperController.update
@@ -31,7 +33,7 @@ router.patch(
 
 router.post(
   '/:paperId/questions',
-  requireAuth([UserRole.ADMIN]),
+  ...ownerAccess,
   validateRequest(paperIdParamSchema, 'params'),
   validateRequest(createQuestionsSchema),
   paperController.addQuestions
@@ -39,7 +41,7 @@ router.post(
 
 router.patch(
   '/:paperId/questions',
-  requireAuth([UserRole.ADMIN]),
+  ...ownerAccess,
   validateRequest(paperIdParamSchema, 'params'),
   validateRequest(updateQuestionsSchema),
   paperController.updateQuestions

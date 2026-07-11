@@ -1,13 +1,19 @@
 import { SignOptions, Secret, sign, verify, VerifyOptions } from 'jsonwebtoken';
 
-import { UserRole } from '@prisma/client';
+import { MembershipStatus, OrganizerRole, PlatformRole } from '@prisma/client';
 
 import { env } from './env';
 import { HttpError } from './http-error';
 
 export interface AccessTokenPayload {
   userId: string;
-  roles: UserRole[];
+  platformRole: PlatformRole;
+  organizerId?: string;
+  activeOrganizerId?: string;
+  membershipId?: string;
+  membershipRole?: OrganizerRole;
+  organizerRole?: OrganizerRole;
+  membershipStatus?: MembershipStatus;
 }
 
 export interface DecodedAccessToken extends AccessTokenPayload {
@@ -44,15 +50,21 @@ export const verifyAccessToken = (token: string): DecodedAccessToken => {
       throw new HttpError(401, 'Invalid token');
     }
 
-    const { userId, roles, iat, exp } = decoded as DecodedAccessToken;
+    const { userId, platformRole, organizerId, activeOrganizerId, membershipId, membershipRole, organizerRole, membershipStatus, iat, exp } = decoded as DecodedAccessToken;
 
-    if (!userId || !Array.isArray(roles) || roles.length === 0) {
+    if (!userId || !platformRole) {
       throw new HttpError(401, 'Invalid token payload');
     }
 
     return {
       userId,
-      roles,
+      platformRole,
+      organizerId: organizerId ?? activeOrganizerId,
+      activeOrganizerId: activeOrganizerId ?? organizerId,
+      membershipId,
+      membershipRole: membershipRole ?? organizerRole,
+      organizerRole: organizerRole ?? membershipRole,
+      membershipStatus,
       iat,
       exp,
     };

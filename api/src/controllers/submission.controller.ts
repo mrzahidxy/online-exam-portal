@@ -1,4 +1,3 @@
-import { UserRole } from '@prisma/client';
 import { NextFunction, Response } from 'express';
 
 import { submissionService } from '../services/submission.service';
@@ -43,10 +42,6 @@ export const submissionController = {
     try {
       if (!req.user) {
         return res.status(401).json({ message: 'Unauthorized' });
-      }
-
-      if (req.user.role !== UserRole.STUDENT) {
-        return res.status(403).json({ message: 'Only students can submit answers' });
       }
 
       const payload = req.body as CreateSubmissionInput;

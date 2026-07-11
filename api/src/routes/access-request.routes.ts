@@ -1,8 +1,8 @@
-import { UserRole } from '@prisma/client';
+import { OrganizerRole } from '@prisma/client';
 import { Router } from 'express';
 
 import { accessRequestController } from '../controllers/access-request.controller';
-import { requireAuth } from '../middleware/auth.middleware';
+import { requireActiveOrganizer, requireAuth, requireOrganizerMembership, requireOrganizerRole } from '../middleware/auth.middleware';
 import { validateRequest } from '../middleware/validation.middleware';
 import {
   accessRequestIdParamSchema,
@@ -12,19 +12,22 @@ import {
 } from '../schemas/access-request.schema';
 
 const router = Router();
+const organizerAccess = [requireAuth(), requireOrganizerMembership(), requireActiveOrganizer()];
+const ownerAccess = [...organizerAccess, requireOrganizerRole(OrganizerRole.OWNER)];
+const studentAccess = [...organizerAccess, requireOrganizerRole(OrganizerRole.STUDENT)];
 
 router.get(
   '/',
-  requireAuth(),
+  ...organizerAccess,
   validateRequest(listAccessRequestQuerySchema, 'query'),
   accessRequestController.list
 );
 
-router.post('/', requireAuth(), validateRequest(createAccessRequestSchema), accessRequestController.create);
+router.post('/', ...studentAccess, validateRequest(createAccessRequestSchema), accessRequestController.create);
 
 router.patch(
   '/:id',
-  requireAuth([UserRole.ADMIN]),
+  ...ownerAccess,
   validateRequest(accessRequestIdParamSchema, 'params'),
   validateRequest(updateAccessRequestSchema),
   accessRequestController.updateStatus

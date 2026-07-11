@@ -1,8 +1,8 @@
-import { UserRole } from '@prisma/client';
+import { OrganizerRole } from '@prisma/client';
 import { Router } from 'express';
 
 import { userController } from '../controllers/user.controller';
-import { requireAuth } from '../middleware/auth.middleware';
+import { requireActiveOrganizer, requireAuth, requireOrganizerMembership, requireOrganizerRole } from '../middleware/auth.middleware';
 import { validateRequest } from '../middleware/validation.middleware';
 import {
   listUsersQuerySchema,
@@ -11,12 +11,14 @@ import {
 } from '../schemas/user.schema';
 
 const router = Router();
+const organizerAccess = [requireAuth(), requireOrganizerMembership(), requireActiveOrganizer()];
+const ownerAccess = [...organizerAccess, requireOrganizerRole(OrganizerRole.OWNER)];
 
-router.get('/', requireAuth([UserRole.ADMIN]), validateRequest(listUsersQuerySchema, 'query'), userController.list);
+router.get('/', ...ownerAccess, validateRequest(listUsersQuerySchema, 'query'), userController.list);
 
 router.get(
   '/:id',
-  requireAuth(),
+  ...organizerAccess,
   validateRequest(userIdParamSchema, 'params'),
   userController.getById
 );
@@ -31,7 +33,7 @@ router.patch(
 
 router.delete(
   '/:id',
-  requireAuth([UserRole.ADMIN]),
+  ...ownerAccess,
   validateRequest(userIdParamSchema, 'params'),
   userController.remove
 );

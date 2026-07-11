@@ -9,38 +9,76 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-model User { 
-  id                       String           @id @default(uuid()) @db.Uuid
-  name                     String
-  email                    String           @unique
-  passwordHash             String
-  role                     UserRole         @default(STUDENT)
-  schoolCode               String?
-  createdAt                DateTime         @default(now())
-  updatedAt                DateTime         @updatedAt
-  createdPapers            QuestionPaper[]  @relation("PaperCreator")
-  accessRequests           AccessRequest[]
-  decidedAccessRequests    AccessRequest[]  @relation("AccessRequestDecider")
-  submissions              Submission[]
-  gradedSubmissions        Grade[]          @relation("GradedBy")
+model User {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  name                  String
+  email                 String                 @unique
+  passwordHash          String
+  platformRole          PlatformRole           @default(USER)
+  schoolCode            String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  memberships           OrganizerMembership[]
+  createdPapers         QuestionPaper[]        @relation("PaperCreator")
+  accessRequests        AccessRequest[]
+  decidedAccessRequests AccessRequest[]        @relation("AccessRequestDecider")
+  submissions           Submission[]
+  gradedSubmissions     Grade[]                @relation("GradedBy")
+}
+
+model Organizer {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  name               String
+  slug               String                 @unique
+  status             OrganizerStatus        @default(ACTIVE)
+  subscriptionStatus SubscriptionStatus     @default(TRIAL)
+  subscriptionEndsAt DateTime?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  memberships        OrganizerMembership[]
+  papers             QuestionPaper[]
+  accessRequests     AccessRequest[]
+  submissions        Submission[]
+}
+
+model OrganizerMembership {
+  id          String           @id @default(uuid()) @db.Uuid
+  organizerId String           @db.Uuid
+  userId      String           @db.Uuid
+  role        OrganizerRole
+  status      MembershipStatus @default(ACTIVE)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  organizer   Organizer        @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizerId])
+  @@index([organizerId])
+  @@index([userId, status])
+  @@index([organizerId, role, status])
 }
 
 model QuestionPaper {
-  id                               String          @id @default(uuid()) @db.Uuid
-  title                            String
-  description                      String
-  durationMinutes                  Int
-  startDate                        DateTime
-  endDate                          DateTime
+  id                                String          @id @default(uuid()) @db.Uuid
+  organizerId                       String          @db.Uuid
+  title                             String
+  description                       String
+  durationMinutes                   Int
+  startDate                         DateTime
+  endDate                           DateTime
   earlySubmissionRestrictionMinutes Int?
-  status                           PaperStatus     @default(DRAFT)
-  createdBy                        String          @db.Uuid
-  createdAt                        DateTime        @default(now())
-  updatedAt                        DateTime        @updatedAt
-  creator                          User            @relation("PaperCreator", fields: [createdBy], references: [id], onDelete: Cascade)
-  questions                        Question[]
-  accessRequests                   AccessRequest[]
-  submissions                      Submission[]
+  status                            PaperStatus     @default(DRAFT)
+  createdBy                         String          @db.Uuid
+  createdAt                         DateTime        @default(now())
+  updatedAt                         DateTime        @updatedAt
+  organizer                         Organizer       @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  creator                           User            @relation("PaperCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  questions                         Question[]
+  accessRequests                    AccessRequest[]
+  submissions                       Submission[]
+
+  @@index([organizerId, status, startDate])
+  @@index([organizerId, createdAt])
 }
 
 model Question {
@@ -77,6 +115,7 @@ model SubQuestion {
 
 model AccessRequest {
   id          String        @id @default(uuid()) @db.Uuid
+  organizerId String        @db.Uuid
   studentId   String        @db.Uuid
   paperId     String        @db.Uuid
   status      AccessStatus  @default(PENDING)
@@ -84,27 +123,34 @@ model AccessRequest {
   decidedAt   DateTime?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+  organizer   Organizer     @relation(fields: [organizerId], references: [id], onDelete: Cascade)
   student     User          @relation(fields: [studentId], references: [id], onDelete: Cascade)
   paper       QuestionPaper @relation(fields: [paperId], references: [id], onDelete: Cascade)
   decidedBy   User?         @relation("AccessRequestDecider", fields: [decidedById], references: [id])
 
   @@unique([studentId, paperId])
+  @@index([organizerId, status, createdAt])
+  @@index([organizerId, paperId, status])
 }
 
 model Submission {
   id          String            @id @default(uuid()) @db.Uuid
+  organizerId String            @db.Uuid
   studentId   String            @db.Uuid
   paperId     String            @db.Uuid
   status      SubmissionStatus  @default(SUBMITTED)
   submittedAt DateTime          @default(now())
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
+  organizer   Organizer         @relation(fields: [organizerId], references: [id], onDelete: Cascade)
   student     User              @relation(fields: [studentId], references: [id], onDelete: Cascade)
   paper       QuestionPaper     @relation(fields: [paperId], references: [id], onDelete: Cascade)
   answers     Answer[]
   grades      Grade[]
 
   @@unique([studentId, paperId])
+  @@index([organizerId, status, submittedAt])
+  @@index([organizerId, paperId])
 }
 
 model Answer {
@@ -121,24 +167,46 @@ model Answer {
 }
 
 model Grade {
-  id            String     @id @default(uuid()) @db.Uuid
-  submissionId  String     @db.Uuid
-  subQuestionId String     @db.Uuid
+  id            String      @id @default(uuid()) @db.Uuid
+  submissionId  String      @db.Uuid
+  subQuestionId String      @db.Uuid
   assignedMarks Int
-  gradedById    String?    @db.Uuid
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  submission    Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  gradedById    String?     @db.Uuid
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  submission    Submission  @relation(fields: [submissionId], references: [id], onDelete: Cascade)
   subQuestion   SubQuestion @relation(fields: [subQuestionId], references: [id], onDelete: Cascade)
-  gradedBy      User?      @relation("GradedBy", fields: [gradedById], references: [id])
+  gradedBy      User?       @relation("GradedBy", fields: [gradedById], references: [id])
   comment       String?
 
   @@unique([submissionId, subQuestionId])
 }
 
-enum UserRole {
-  STUDENT
+enum PlatformRole {
   ADMIN
+  USER
+}
+
+enum OrganizerRole {
+  OWNER
+  STUDENT
+}
+
+enum OrganizerStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+enum MembershipStatus {
+  ACTIVE
+  SUSPENDED
 }
 
 enum PaperStatus {

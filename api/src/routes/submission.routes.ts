@@ -1,8 +1,8 @@
-import { UserRole } from '@prisma/client';
+import { OrganizerRole } from '@prisma/client';
 import { Router } from 'express';
 
 import { submissionController } from '../controllers/submission.controller';
-import { requireAuth } from '../middleware/auth.middleware';
+import { requireActiveOrganizer, requireAuth, requireOrganizerMembership, requireOrganizerRole } from '../middleware/auth.middleware';
 import { validateRequest } from '../middleware/validation.middleware';
 import {
   createSubmissionSchema,
@@ -12,26 +12,29 @@ import {
 } from '../schemas/submission.schema';
 
 const router = Router();
+const organizerAccess = [requireAuth(), requireOrganizerMembership(), requireActiveOrganizer()];
+const ownerAccess = [...organizerAccess, requireOrganizerRole(OrganizerRole.OWNER)];
+const studentAccess = [...organizerAccess, requireOrganizerRole(OrganizerRole.STUDENT)];
 
 router.get(
   '/',
-  requireAuth(),
+  ...organizerAccess,
   validateRequest(listSubmissionsQuerySchema, 'query'),
   submissionController.list
 );
 
 router.get(
   '/:id',
-  requireAuth(),
+  ...organizerAccess,
   validateRequest(submissionIdParamSchema, 'params'),
   submissionController.getById
 );
 
-router.post('/', requireAuth([UserRole.STUDENT]), validateRequest(createSubmissionSchema), submissionController.create);
+router.post('/', ...studentAccess, validateRequest(createSubmissionSchema), submissionController.create);
 
 router.post(
   '/:id/grades',
-  requireAuth([UserRole.ADMIN]),
+  ...ownerAccess,
   validateRequest(submissionIdParamSchema, 'params'),
   validateRequest(gradeSubmissionSchema),
   submissionController.grade

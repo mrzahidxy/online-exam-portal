@@ -1,4 +1,4 @@
-import { UserRole } from '@prisma/client';
+import { OrganizerRole } from '@prisma/client';
 import { z } from 'zod';
 
 export const userIdParamSchema = z.object({
@@ -6,7 +6,7 @@ export const userIdParamSchema = z.object({
 });
 
 export const listUsersQuerySchema = z.object({
-  role: z.nativeEnum(UserRole).optional(),
+  role: z.nativeEnum(OrganizerRole).optional(),
   search: z.string().min(1).optional(),
   page: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().positive().optional(),
@@ -17,7 +17,6 @@ export const updateUserSchema = z.object({
   name: z.string().min(1).optional(),
   schoolCode: z.string().min(1).nullable().optional(),
 });
-
 
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 export type ListUsersQuery = z.infer<typeof listUsersQuerySchema>;

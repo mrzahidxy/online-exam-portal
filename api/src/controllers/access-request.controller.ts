@@ -39,7 +39,7 @@ export const accessRequestController = {
       }
 
       const payload = req.body as CreateAccessRequestInput;
-      const request = await accessRequestService.create(req.user.id, payload);
+      const request = await accessRequestService.create(req.user, payload);
       sendSuccess(res, 201, 'Access request created', request);
     } catch (error) {
       next(error);
