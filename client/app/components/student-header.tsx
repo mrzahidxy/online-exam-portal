@@ -1,5 +1,6 @@
 "use client"
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from "@/components/ui/button"
 import { LogOut } from "lucide-react"
@@ -34,7 +35,15 @@ export function StudentHeader({ studentName, schoolCode }: StudentHeaderProps) {
               Student Portal
             </h1>
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4 sm:gap-6">
+            <nav className="hidden sm:flex items-center gap-2">
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/student/assessments">Assessments</Link>
+              </Button>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/student/mock-papers">Mock Papers</Link>
+              </Button>
+            </nav>
             <div className="text-right">
               <p className="text-sm font-medium text-foreground">
                 {displayName}
