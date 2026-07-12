@@ -1,4 +1,4 @@
-import { MembershipStatus, OrganizerRole, PlatformRole } from '@prisma/client';
+import { MembershipStatus, OrganizerRole, PlatformRole, SubscriptionStatus } from '@prisma/client';
 
 import { LoginInput, RegisterInput } from '../schemas/auth.schema';
 import { SanitizedUser } from '../types/user';
@@ -6,6 +6,7 @@ import { HttpError } from '../utils/http-error';
 import { prisma } from '../utils/prisma';
 import { comparePassword, hashPassword } from '../utils/password';
 import { createAccessToken } from '../utils/jwt';
+import { createTrialSubscriptionData } from './subscription.service';
 
 const sanitizeUser = <T extends { passwordHash?: string; platformRole: PlatformRole; memberships?: any[] }>(user: T): SanitizedUser => {
   const { passwordHash: _passwordHash, memberships, ...rest } = user;
@@ -145,6 +146,9 @@ export const authService = {
                     slug,
                     status: 'ACTIVE',
                     subscriptionStatus: 'TRIAL',
+                    subscription: {
+                      create: createTrialSubscriptionData(),
+                    },
                   },
                 },
               },
@@ -158,8 +162,8 @@ export const authService = {
     }
 
     const organizer = await resolveRegistrationOrganizer(input);
-    const user = await prisma.$transaction(async (tx) =>
-      tx.user.create({
+    const user = await prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
         data: {
           email: input.email,
           name: input.name,
@@ -175,8 +179,36 @@ export const authService = {
           },
         },
         include: userWithMembershipInclude,
-      })
-    );
+      });
+
+      const fixedPlan = await tx.studentSubscriptionPlan.upsert({
+        where: { organizerId_code: { organizerId: organizer.id, code: 'FIXED_MOCK_ACCESS' } },
+        update: {},
+        create: {
+          organizerId: organizer.id,
+          code: 'FIXED_MOCK_ACCESS',
+          name: 'Fixed Mock Paper Access',
+          mockPaperLimit: 20,
+          periodDays: 30,
+          isActive: true,
+        },
+      });
+      const now = new Date();
+      await tx.studentSubscription.create({
+        data: {
+          organizerId: organizer.id,
+          studentId: created.id,
+          planId: fixedPlan.id,
+          status: SubscriptionStatus.EXPIRED,
+          mockPaperLimit: 0,
+          mockPaperUsed: 0,
+          currentPeriodStart: now,
+          currentPeriodEnd: now,
+        },
+      });
+
+      return created;
+    });
 
     return buildAuthResponse(sanitizeUser(user));
   },

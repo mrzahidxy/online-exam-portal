@@ -10,35 +10,115 @@ datasource db {
 }
 
 model User {
-  id                    String                 @id @default(uuid()) @db.Uuid
-  name                  String
-  email                 String                 @unique
-  passwordHash          String
-  platformRole          PlatformRole           @default(USER)
-  schoolCode            String?
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  memberships           OrganizerMembership[]
-  createdPapers         QuestionPaper[]        @relation("PaperCreator")
-  accessRequests        AccessRequest[]
-  decidedAccessRequests AccessRequest[]        @relation("AccessRequestDecider")
-  submissions           Submission[]
-  gradedSubmissions     Grade[]                @relation("GradedBy")
+  id                        String                @id @default(uuid()) @db.Uuid
+  name                      String
+  email                     String                @unique
+  passwordHash              String
+  platformRole              PlatformRole          @default(USER)
+  schoolCode                String?
+  createdAt                 DateTime              @default(now())
+  updatedAt                 DateTime              @updatedAt
+  memberships               OrganizerMembership[]
+  createdPapers             QuestionPaper[]       @relation("PaperCreator")
+  accessRequests            AccessRequest[]
+  decidedAccessRequests     AccessRequest[]       @relation("AccessRequestDecider")
+  submissions               Submission[]
+  gradedSubmissions         Grade[]               @relation("GradedBy")
+  createdQuestionCategories QuestionCategory[]    @relation("QuestionCategoryCreator")
+  mockPapers                MockPaper[]           @relation("StudentMockPapers")
+  mockSubmissions           MockSubmission[]      @relation("StudentMockSubmissions")
+  mockGrades                MockGrade[]           @relation("MockGradedBy")
+  studentSubscriptions      StudentSubscription[] @relation("StudentSubscriptions")
 }
 
 model Organizer {
-  id                 String                 @id @default(uuid()) @db.Uuid
-  name               String
-  slug               String                 @unique
-  status             OrganizerStatus        @default(ACTIVE)
-  subscriptionStatus SubscriptionStatus     @default(TRIAL)
-  subscriptionEndsAt DateTime?
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
-  memberships        OrganizerMembership[]
-  papers             QuestionPaper[]
-  accessRequests     AccessRequest[]
-  submissions        Submission[]
+  id                   String                    @id @default(uuid()) @db.Uuid
+  name                 String
+  slug                 String                    @unique
+  status               OrganizerStatus           @default(ACTIVE)
+  subscriptionStatus   SubscriptionStatus        @default(TRIAL)
+  subscriptionEndsAt   DateTime?
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  memberships          OrganizerMembership[]
+  papers               QuestionPaper[]
+  accessRequests       AccessRequest[]
+  submissions          Submission[]
+  questionCategories   QuestionCategory[]
+  mockPapers           MockPaper[]
+  mockSubmissions      MockSubmission[]
+  mockAnswers          MockAnswer[]
+  mockGrades           MockGrade[]
+  subscription         Subscription?
+  studentSubscriptions StudentSubscription[]
+  studentPlans         StudentSubscriptionPlan[]
+}
+
+model Subscription {
+  id                     String             @id @default(uuid()) @db.Uuid
+  organizerId            String             @unique @db.Uuid
+  status                 SubscriptionStatus @default(TRIAL)
+  planCode               String             @default("TRIAL")
+  mockPaperLimit         Int                @default(20)
+  mockPaperUsed          Int                @default(0)
+  currentPeriodStart     DateTime           @default(now())
+  currentPeriodEnd       DateTime
+  provider               String?
+  providerCustomerId     String?
+  providerSubscriptionId String?
+  providerPriceId        String?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  organizer              Organizer          @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([currentPeriodEnd])
+}
+
+model StudentSubscriptionPlan {
+  id              String                @id @default(uuid()) @db.Uuid
+  organizerId     String                @db.Uuid
+  code            String
+  name            String
+  mockPaperLimit  Int                   @default(0)
+  periodDays      Int                   @default(30)
+  isActive        Boolean               @default(true)
+  provider        String?
+  providerPriceId String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  organizer       Organizer             @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  subscriptions   StudentSubscription[]
+
+  @@unique([organizerId, code])
+  @@index([organizerId, isActive])
+}
+
+model StudentSubscription {
+  id                     String                   @id @default(uuid()) @db.Uuid
+  organizerId            String                   @db.Uuid
+  studentId              String                   @db.Uuid
+  planId                 String?                  @db.Uuid
+  status                 SubscriptionStatus       @default(EXPIRED)
+  mockPaperLimit         Int                      @default(0)
+  mockPaperUsed          Int                      @default(0)
+  currentPeriodStart     DateTime                 @default(now())
+  currentPeriodEnd       DateTime
+  provider               String?
+  providerCustomerId     String?
+  providerSubscriptionId String?
+  providerPriceId        String?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  organizer              Organizer                @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  student                User                     @relation("StudentSubscriptions", fields: [studentId], references: [id], onDelete: Cascade)
+  plan                   StudentSubscriptionPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+
+  @@unique([organizerId, studentId])
+  @@index([organizerId])
+  @@index([studentId])
+  @@index([status])
+  @@index([currentPeriodEnd])
 }
 
 model OrganizerMembership {
@@ -82,35 +162,157 @@ model QuestionPaper {
 }
 
 model Question {
-  id           String          @id @default(uuid()) @db.Uuid
-  paperId      String          @db.Uuid
-  contentHtml  String
-  marks        Int
-  position     Int
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  paper        QuestionPaper   @relation(fields: [paperId], references: [id], onDelete: Cascade)
-  subQuestions SubQuestion[]
+  id            String                 @id @default(uuid()) @db.Uuid
+  paperId       String?                @db.Uuid
+  contentHtml   String
+  marks         Int
+  position      Int
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  paper         QuestionPaper?         @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  subQuestions  SubQuestion[]
+  categoryItems QuestionCategoryItem[]
+  mockItems     MockPaperItem[]
 
   @@unique([paperId, position])
 }
 
 model SubQuestion {
-  id           String        @id @default(uuid()) @db.Uuid
-  questionId   String        @db.Uuid
+  id           String       @id @default(uuid()) @db.Uuid
+  questionId   String       @db.Uuid
   label        String
   question     String
   marks        Int
-  questionType QuestionType  @default(DESCRIPTIVE)
+  questionType QuestionType @default(DESCRIPTIVE)
   mcqOptions   Json?
   position     Int
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  questionRel  Question      @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  questionRel  Question     @relation(fields: [questionId], references: [id], onDelete: Cascade)
   answers      Answer[]
   grades       Grade[]
+  mockAnswers  MockAnswer[]
+  mockGrades   MockGrade[]
 
   @@unique([questionId, position, label])
+}
+
+model QuestionCategory {
+  id          String                 @id @default(uuid()) @db.Uuid
+  organizerId String                 @db.Uuid
+  title       String
+  description String?
+  isActive    Boolean                @default(true)
+  createdById String                 @db.Uuid
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  organizer   Organizer              @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  createdBy   User                   @relation("QuestionCategoryCreator", fields: [createdById], references: [id])
+  items       QuestionCategoryItem[]
+
+  @@unique([organizerId, title])
+  @@index([organizerId, isActive, title])
+}
+
+model QuestionCategoryItem {
+  id          String           @id @default(uuid()) @db.Uuid
+  organizerId String           @db.Uuid
+  categoryId  String           @db.Uuid
+  questionId  String           @db.Uuid
+  position    Int
+  category    QuestionCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  question    Question         @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, questionId])
+  @@unique([categoryId, position])
+  @@index([organizerId, questionId])
+}
+
+model MockPaper {
+  id          String           @id @default(uuid()) @db.Uuid
+  organizerId String           @db.Uuid
+  studentId   String           @db.Uuid
+  title       String
+  status      MockPaperStatus  @default(GENERATED)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  organizer   Organizer        @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  student     User             @relation("StudentMockPapers", fields: [studentId], references: [id], onDelete: Cascade)
+  items       MockPaperItem[]
+  submissions MockSubmission[]
+
+  @@index([organizerId, studentId, status])
+  @@index([organizerId, status, createdAt])
+}
+
+model MockPaperItem {
+  id          String    @id @default(uuid()) @db.Uuid
+  organizerId String    @db.Uuid
+  mockPaperId String    @db.Uuid
+  questionId  String    @db.Uuid
+  position    Int
+  mockPaper   MockPaper @relation(fields: [mockPaperId], references: [id], onDelete: Cascade)
+  question    Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([mockPaperId, questionId])
+  @@unique([mockPaperId, position])
+  @@index([organizerId, questionId])
+}
+
+model MockSubmission {
+  id          String               @id @default(uuid()) @db.Uuid
+  organizerId String               @db.Uuid
+  mockPaperId String               @db.Uuid
+  studentId   String               @db.Uuid
+  status      MockSubmissionStatus @default(SUBMITTED)
+  submittedAt DateTime             @default(now())
+  reviewedAt  DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  organizer   Organizer            @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  mockPaper   MockPaper            @relation(fields: [mockPaperId], references: [id], onDelete: Cascade)
+  student     User                 @relation("StudentMockSubmissions", fields: [studentId], references: [id], onDelete: Cascade)
+  answers     MockAnswer[]
+  grades      MockGrade[]
+
+  @@unique([organizerId, studentId, mockPaperId])
+  @@index([organizerId, mockPaperId])
+  @@index([organizerId, status, submittedAt])
+}
+
+model MockAnswer {
+  id               String         @id @default(uuid()) @db.Uuid
+  organizerId      String         @db.Uuid
+  mockSubmissionId String         @db.Uuid
+  subQuestionId    String         @db.Uuid
+  answerText       String
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  organizer        Organizer      @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  mockSubmission   MockSubmission @relation(fields: [mockSubmissionId], references: [id], onDelete: Cascade)
+  subQuestion      SubQuestion    @relation(fields: [subQuestionId], references: [id], onDelete: Cascade)
+
+  @@unique([mockSubmissionId, subQuestionId])
+  @@index([organizerId, subQuestionId])
+}
+
+model MockGrade {
+  id               String         @id @default(uuid()) @db.Uuid
+  organizerId      String         @db.Uuid
+  mockSubmissionId String         @db.Uuid
+  subQuestionId    String         @db.Uuid
+  assignedMarks    Int
+  comment          String?
+  gradedById       String?        @db.Uuid
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  organizer        Organizer      @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  mockSubmission   MockSubmission @relation(fields: [mockSubmissionId], references: [id], onDelete: Cascade)
+  subQuestion      SubQuestion    @relation(fields: [subQuestionId], references: [id], onDelete: Cascade)
+  gradedBy         User?          @relation("MockGradedBy", fields: [gradedById], references: [id])
+
+  @@unique([mockSubmissionId, subQuestionId])
+  @@index([organizerId, subQuestionId])
 }
 
 model AccessRequest {
@@ -134,17 +336,17 @@ model AccessRequest {
 }
 
 model Submission {
-  id          String            @id @default(uuid()) @db.Uuid
-  organizerId String            @db.Uuid
-  studentId   String            @db.Uuid
-  paperId     String            @db.Uuid
-  status      SubmissionStatus  @default(SUBMITTED)
-  submittedAt DateTime          @default(now())
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  organizer   Organizer         @relation(fields: [organizerId], references: [id], onDelete: Cascade)
-  student     User              @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  paper       QuestionPaper     @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  id          String           @id @default(uuid()) @db.Uuid
+  organizerId String           @db.Uuid
+  studentId   String           @db.Uuid
+  paperId     String           @db.Uuid
+  status      SubmissionStatus @default(SUBMITTED)
+  submittedAt DateTime         @default(now())
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  organizer   Organizer        @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  student     User             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  paper       QuestionPaper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
   answers     Answer[]
   grades      Grade[]
 
@@ -221,6 +423,17 @@ enum AccessStatus {
 }
 
 enum SubmissionStatus {
+  SUBMITTED
+  REVIEWED
+}
+
+enum MockPaperStatus {
+  GENERATED
+  ATTEMPTED
+  ARCHIVED
+}
+
+enum MockSubmissionStatus {
   SUBMITTED
   REVIEWED
 }

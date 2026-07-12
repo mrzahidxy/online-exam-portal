@@ -231,7 +231,6 @@ const upsertSubQuestions = async (
       if (subInput.mcqOptions !== undefined) {
         data.mcqOptions = subInput.mcqOptions;
       }
-
       if (Object.keys(data).length === 0) {
         continue;
       }

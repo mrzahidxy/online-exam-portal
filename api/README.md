@@ -12,11 +12,13 @@ A production-ready starter template for building PERN (Postgres, Express, React,
 
 - **TypeScript-first Express server** with structured `routes -> controllers -> services`
 - **Centralized environment management**, validation, and consistent error handling
-- **Prisma ORM** with PostgreSQL migrations, UUID identifiers, and ready-to-use seed data (admins + students + sample paper)
-- **JWT authentication** with role-based guards
+- **Prisma ORM** with PostgreSQL migrations, UUID identifiers, and ready-to-use seed data (owner + students + sample paper)
+- **JWT authentication** with organizer membership guards for owners and students
 - **Question paper endpoints** for creating papers, scheduling windows, and managing nested questions/sub-questions
-- **Access request workflow** so students can request entry and admins approve/reject
+- **Access request workflow** so students can request entry and owners approve/reject
 - **Submission + grading APIs** that enforce early-submission rules, answer validation, and per-sub-question marks
+- **Subscription and mock-paper access controls** for organizer access, student mock-paper quota, usage reset, and expiry checks
+- **Question categories + generated mock papers** with owner-managed category pools, student generation, submission, grading, and feedback
 - **Request sanitization** with Zod + xss, rate limiting, CORS, Helmet, and compression defaults
 - **Request-scoped logging** powered by Pino + AsyncLocalStorage with automatic request IDs (pretty-printed locally via `pino-pretty`)
 - **OpenAPI documentation**, health endpoint, Docker Compose for PostgreSQL, and Google Cloud Storage uploads
@@ -122,6 +124,9 @@ npm install
 
    # Client URL (for redirects)
    CLIENT_URL="http://localhost:5173"
+
+   # Mock paper generation
+   MOCK_PAPER_QUESTION_COUNT=10
    ```
 
 ### 3. Database Setup with Docker
@@ -151,9 +156,12 @@ npm install
    ```
 
    **Seed Data Includes:**
-   - **Admin User:** `admin@exam.io`
+   - **Owner User:** `admin@exam.io`
    - **Students:** `student1@exam.io`, `student2@exam.io` with school codes
+   - **Organizer subscription:** trial access for the seeded organizer
+   - **Student mock-paper access:** fixed mock-paper limits for seeded students
    - **Mathematics Mock Paper:** nested questions/sub-questions ready to serve
+   - **Question categories:** active category pools used to generate mock papers
    - **Access Requests & Submission:** one approved, one pending request, plus a graded submission
 
 ### 4. Run the Application
@@ -274,10 +282,47 @@ For a complete containerized environment:
 
 | Method | Path                               | Description                                                | Auth    |
 | ------ | ---------------------------------- | ---------------------------------------------------------- | ------- |
-| GET    | `/api/submissions`                 | List submissions (admins all, students see their own)      | Yes     |
+| GET    | `/api/submissions`                 | List submissions (owners all, students see their own)      | Yes     |
 | GET    | `/api/submissions/:id`             | Retrieve a submission with answers and grades              | Yes     |
 | POST   | `/api/submissions`                 | Submit answers for a paper (enforces early-submission rule)| Student |
-| POST   | `/api/submissions/:id/grades`      | Upsert grades per sub-question and mark submission reviewed| Admin   |
+| POST   | `/api/submissions/:id/grades`      | Upsert grades per sub-question and mark submission reviewed| Owner   |
+
+### Subscriptions
+
+| Method | Path                                             | Description                                           | Auth    |
+| ------ | ------------------------------------------------ | ----------------------------------------------------- | ------- |
+| GET    | `/api/subscription`                              | Current organizer subscription summary                | Yes     |
+| GET    | `/api/subscription/mock-paper`                   | Current student's mock-paper access and quota         | Student |
+| GET    | `/api/admin/subscriptions`                       | List organizer subscription records                   | Owner   |
+| PATCH  | `/api/admin/subscriptions/:subscriptionId`       | Update organizer subscription metadata/status         | Owner   |
+| GET    | `/api/admin/subscriptions/students`              | List student mock-paper subscriptions                 | Owner   |
+| PUT    | `/api/admin/subscriptions/students/:studentId`   | Create/update a student's mock-paper access           | Owner   |
+| POST   | `/api/admin/subscriptions/students/:studentId/reset-usage` | Reset a student's mock-paper usage counter | Owner   |
+| GET    | `/api/admin/subscriptions/plans`                 | List student subscription plans                       | Owner   |
+| POST   | `/api/admin/subscriptions/plans`                 | Create a student subscription plan                    | Owner   |
+| PATCH  | `/api/admin/subscriptions/plans/:planId`         | Update a student subscription plan                    | Owner   |
+| DELETE | `/api/admin/subscriptions/plans/:planId`         | Delete a student subscription plan                    | Owner   |
+
+### Question Categories and Mock Papers
+
+| Method | Path                                           | Description                                      | Auth    |
+| ------ | ---------------------------------------------- | ------------------------------------------------ | ------- |
+| GET    | `/api/question-categories`                     | List owner-managed categories                    | Owner   |
+| GET    | `/api/question-categories/active`              | List active categories available for mock papers | Yes     |
+| POST   | `/api/question-categories`                     | Create a category                                | Owner   |
+| PATCH  | `/api/question-categories/:categoryId`         | Update a category                                | Owner   |
+| DELETE | `/api/question-categories/:categoryId`         | Delete a category                                | Owner   |
+| POST   | `/api/question-categories/:categoryId/questions/existing` | Add an existing question to a category | Owner   |
+| POST   | `/api/question-categories/:categoryId/questions` | Create a mock-only question in a category      | Owner   |
+| DELETE | `/api/question-categories/:categoryId/questions/:questionId` | Remove a question from a category    | Owner   |
+| GET    | `/api/mock-papers`                             | List student's generated mock papers             | Student |
+| POST   | `/api/mock-papers`                             | Generate a mock paper from selected categories   | Student |
+| GET    | `/api/mock-papers/:mockPaperId`                | Fetch a mock paper                               | Yes     |
+| POST   | `/api/mock-papers/:mockPaperId/submissions`    | Submit mock-paper answers; partial/empty allowed | Student |
+| POST   | `/api/mock-papers/:mockPaperId/archive`        | Archive own generated mock paper                 | Student |
+| GET    | `/api/mock-papers/submissions`                 | List mock-paper submissions                      | Owner   |
+| POST   | `/api/mock-papers/submissions/:submissionId/grades` | Grade a mock-paper submission                | Owner   |
+| GET    | `/api/mock-papers/submissions/:submissionId/feedback` | Student feedback for reviewed mock paper    | Student |
 
 ### User Management
 
@@ -301,7 +346,7 @@ For a complete containerized environment:
 - All request bodies are validated with Zod schemas and sanitized
 - Validation failures return `400` with detailed error messages
 - Authentication uses JWT tokens in `Authorization: Bearer <token>` header
-- Role-based access control: `ADMIN` (full) + `STUDENT` (exam taker)
+- Role-based access control: organizer `OWNER` + `STUDENT`
 
 ---
 
@@ -313,14 +358,15 @@ For a complete containerized environment:
 - **Token Expiration**: Configurable via `JWT_EXPIRES_IN` (default: 15 minutes)
 
 ### Role-Based Access Control
-- **ADMIN**: Full access to users, papers, access requests, grading, and settings
-- **STUDENT**: Request paper access, view approved papers, submit answers, track results
-- Access decisions are role-based only (no per-permission assignments)
+- **OWNER**: Manage papers, access requests, grading, subscriptions, question categories, and mock-paper submissions for their organizer
+- **STUDENT**: Request paper access, view approved papers, submit answers, generate mock papers within assigned quota, and view feedback
+- Organizer membership, organizer status, and subscription status are checked before organizer-scoped resources are served.
 
 ### User Roles in Seed Data
-- **Admin User**: `admin@exam.io` - Full system access
+- **Owner User**: `admin@exam.io` - Full organizer access
 - **Students**: `student1@exam.io`, `student2@exam.io` with example school codes
 - **Sample Paper**: Mathematics mock exam with pre-seeded questions/sub-questions
+- **Sample Categories/Subscriptions**: mock-paper categories and fixed student mock-paper access
 - **Sample Data**: Approved/pending access requests and one submission with grades
 
 ### Authentication Flow
@@ -338,11 +384,13 @@ For a complete containerized environment:
 
 ---
 
-## Access Request & Submission Workflow
+## Access Request, Subscription, and Mock-Paper Workflow
 
-- `src/services/access-request.service.ts` handles student requests, admin approvals/rejections, and pagination helpers.
+- `src/services/access-request.service.ts` handles student requests, owner approvals/rejections, and pagination helpers.
 - `src/services/submission.service.ts` enforces exam windows, early submission restrictions, and per-question answer validation.
 - `src/services/paper.service.ts` exposes helpers for listing papers, including nested questions/sub-questions in a single call.
+- `src/services/subscription.service.ts` checks organizer subscription status, manages student mock-paper access, and increments/resets usage.
+- `src/services/mock-paper.service.ts` generates mock papers from active categories, stores submissions, and supports owner grading plus student feedback.
 
 ---
 
@@ -356,17 +404,23 @@ For a complete containerized environment:
 ## Database Schema & Seed Data
 
 ### Prisma Models
-- **User**: Admins and students with UUID ids, hashed passwords, and optional school codes
+- **User/Organizer/OrganizerMembership**: Owners and students scoped to an organizer, with UUID ids, hashed passwords, and optional school codes
+- **Subscription**: Organizer-level platform access status and period
+- **StudentSubscription/StudentSubscriptionPlan**: Student mock-paper access limits, usage, and expiry
 - **QuestionPaper**: Exam metadata (schedule, duration, early submission rule, status) and creator relation
-- **Question/SubQuestion**: Ordered content definition with per-sub-question marks
+- **Question/SubQuestion**: Ordered content definition with per-sub-question marks; questions can also be mock-only category questions
+- **QuestionCategory/QuestionCategoryItem**: Owner-managed pools used for mock-paper generation
+- **MockPaper/MockPaperItem/MockSubmission/MockAnswer/MockGrade**: Generated mock papers, answers, grading, and feedback
 - **AccessRequest**: Tracks student requests plus reviewer + timestamps
 - **Submission/Answer/Grade**: One submission per student per paper, with per sub-question responses and assigned marks
 
 ### Seed Data Overview
 The `prisma/seed.ts` script creates:
-- 1 admin (`admin@exam.io`) with full access
+- 1 owner (`admin@exam.io`) with full organizer access
 - 2 students, one with an approved access request and graded submission
 - 1 published paper (“Mathematics Mock Paper”) with nested questions/sub-questions
+- Active question categories for mock-paper generation
+- Organizer subscription and student mock-paper subscription records
 - Pending and approved access requests plus example answers/grades for easy testing
 
 ### Database Management

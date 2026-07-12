@@ -1,16 +1,12 @@
-import { MembershipStatus, OrganizerRole, OrganizerStatus, PlatformRole, SubscriptionStatus } from '@prisma/client';
+import { MembershipStatus, OrganizerRole, OrganizerStatus, PlatformRole } from '@prisma/client';
 import { NextFunction, Response } from 'express';
 
+import { assertActiveSubscription } from '../services/subscription-rules';
 import { verifyAccessToken } from '../utils/jwt';
 import { prisma } from '../utils/prisma';
 import { env } from '../utils/env';
 import type { AuthenticatedRequest } from '../types/http';
 import { HttpError } from '../utils/http-error';
-
-const allowedSubscriptionStatuses = new Set<SubscriptionStatus>([
-  SubscriptionStatus.TRIAL,
-  SubscriptionStatus.ACTIVE,
-]);
 
 export const requireAuth = () => async (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
   try {
@@ -125,16 +121,22 @@ export const requireOrganizerRole = (role: OrganizerRole) => (req: Authenticated
 export const requireOwner = () => requireOrganizerRole(OrganizerRole.OWNER);
 export const requireStudent = () => requireOrganizerRole(OrganizerRole.STUDENT);
 
-export const requireActiveOrganizer = () => (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
-  if (!req.organizer) return next(new HttpError(403, 'Organizer membership required'));
-  if (req.organizer.membershipStatus !== MembershipStatus.ACTIVE) {
-    return next(new HttpError(403, 'Organizer membership is suspended'));
+export const requireActiveOrganizer = () => async (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
+  try {
+    if (!req.organizer) throw new HttpError(403, 'Organizer membership required');
+    if (req.organizer.membershipStatus !== MembershipStatus.ACTIVE) {
+      throw new HttpError(403, 'Organizer membership is suspended');
+    }
+    if (req.organizer.organizerStatus !== OrganizerStatus.ACTIVE) {
+      throw new HttpError(403, 'Organizer is suspended');
+    }
+    const subscription = await prisma.subscription.findUnique({
+      where: { organizerId: req.organizer.organizerId },
+      select: { status: true, currentPeriodEnd: true },
+    });
+    assertActiveSubscription(subscription, 'Organizer subscription does not permit access');
+    next();
+  } catch (error) {
+    next(error);
   }
-  if (req.organizer.organizerStatus !== OrganizerStatus.ACTIVE) {
-    return next(new HttpError(403, 'Organizer is suspended'));
-  }
-  if (!allowedSubscriptionStatuses.has(req.organizer.subscriptionStatus)) {
-    return next(new HttpError(403, 'Organizer subscription does not permit access'));
-  }
-  next();
 };

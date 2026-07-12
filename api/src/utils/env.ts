@@ -21,6 +21,7 @@ const envSchema = z.object({
     GCP_BUCKET_NAME: z.string().optional(),
     MAX_UPLOAD_SIZE: z.coerce.number().default(5 * 1024 * 1024),
     TRUST_PROXY: z.coerce.boolean().default(false),
+    MOCK_PAPER_QUESTION_COUNT: z.coerce.number().int().positive().default(10),
 });
 
 const parsed = envSchema.safeParse(process.env);
