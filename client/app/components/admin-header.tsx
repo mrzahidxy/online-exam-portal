@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
+import { useShallow } from "zustand/react/shallow";
 
 interface AdminHeaderProps {
   title?: string;
@@ -19,7 +20,12 @@ export function AdminHeader({
 }: AdminHeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, logout } = useAuthStore();
+  const { user, logout } = useAuthStore(
+    useShallow((state) => ({
+      user: state.user,
+      logout: state.logout,
+    })),
+  );
 
   const handleLogout = async () => {
     await logout();

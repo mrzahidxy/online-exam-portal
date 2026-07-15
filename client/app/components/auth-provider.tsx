@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { isAccessBlocked, useAuthStore } from "@/lib/auth-store";
+import { useShallow } from "zustand/react/shallow";
 
 const BlockedAccess = ({ message }: { message: string }) => (
   <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -16,7 +17,14 @@ const BlockedAccess = ({ message }: { message: string }) => (
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { checkAuth, isAuthenticated, user, isLoading } = useAuthStore();
+  const { checkAuth, isAuthenticated, user, isLoading } = useAuthStore(
+    useShallow((state) => ({
+      checkAuth: state.checkAuth,
+      isAuthenticated: state.isAuthenticated,
+      user: state.user,
+      isLoading: state.isLoading,
+    })),
+  );
   const hasCheckedAuth = useRef(false);
   const [authChecked, setAuthChecked] = useState(false);
 
@@ -39,7 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (isProtectedRoute && authChecked && !isAuthenticated && !isLoading) {
-      router.push("/auth/login");
+      router.replace("/auth/login");
     }
   }, [isProtectedRoute, authChecked, isAuthenticated, isLoading, router]);
 

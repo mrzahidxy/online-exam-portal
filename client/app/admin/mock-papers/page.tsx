@@ -12,11 +12,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { mockPaperService } from "@/lib/mock-paper-service";
 
 type StatusFilter = "ALL" | "SUBMITTED" | "REVIEWED";
+const dateFormatter = new Intl.DateTimeFormat();
 
 const formatDate = (value?: string | null) => {
   if (!value) return "-";
   const parsed = new Date(value);
-  return Number.isNaN(parsed.valueOf()) ? value : parsed.toLocaleDateString();
+  return Number.isNaN(parsed.valueOf()) ? value : dateFormatter.format(parsed);
 };
 
 export default function AdminMockPapersPage() {

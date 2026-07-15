@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText } from "lucide-react";
@@ -14,13 +14,13 @@ import { mockPaperService } from "@/lib/mock-paper-service";
 import { fetchSubscriptionSummary, type SubscriptionSummary } from "@/lib/subscription-service";
 
 const activeSubscriptionStatuses = new Set(["TRIAL", "ACTIVE"]);
+const dateFormatter = new Intl.DateTimeFormat(undefined, {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
 
-const formatDate = (value: string) =>
-  new Intl.DateTimeFormat(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(value));
+const formatDate = (value: string) => dateFormatter.format(new Date(value));
 
 function SubscriptionSummaryCard({
   subscription,
@@ -71,6 +71,7 @@ export default function StudentMockPapersPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
+  const selectedCategorySet = useMemo(() => new Set(selectedCategoryIds), [selectedCategoryIds]);
 
   const subscriptionQuery = useQuery({
     queryKey: ["subscription"],
@@ -128,13 +129,11 @@ export default function StudentMockPapersPage() {
   const quotaExhausted = subscription ? subscription.remaining <= 0 : false;
   const generationBlocked = !subscriptionActive || quotaExhausted;
 
-  const toggleCategory = (categoryId: string) => {
+  const toggleCategory = useCallback((categoryId: string) => {
     setSelectedCategoryIds((current) =>
-      current.includes(categoryId)
-        ? current.filter((id) => id !== categoryId)
-        : [...current, categoryId]
+      current.includes(categoryId) ? current.filter((id) => id !== categoryId) : [...current, categoryId],
     );
-  };
+  }, []);
 
   return (
     <div className="min-h-screen bg-background">
@@ -171,7 +170,7 @@ export default function StudentMockPapersPage() {
 
           <div className="flex flex-wrap gap-2">
             {categoriesQuery.data?.map((category) => {
-              const selected = selectedCategoryIds.includes(category.id);
+              const selected = selectedCategorySet.has(category.id);
               return (
                 <Button
                   key={category.id}

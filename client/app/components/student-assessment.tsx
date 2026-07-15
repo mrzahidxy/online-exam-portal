@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { useSubmissionMutations } from "@/hooks/mutations/useSubmissionMutations";
 import { usePaper } from "@/hooks/queries/usePaper";
 import { useAuthStore } from "@/lib/auth-store";
+import { useShallow } from "zustand/react/shallow";
 import { TopAppBar } from "./exam/top-app-bar";
 import { QuestionCard } from "./exam/question-card";
 import { RightNavigator } from "./exam/right-navigator";
@@ -26,7 +27,7 @@ export default function StudentAssessment({
 }: StudentAssessmentProps) {
   // All hooks must be called at the top level before any conditional returns
   const { data: paper, isLoading, isError, error } = usePaper(assessmentId);
-  const { user } = useAuthStore();
+  const { user } = useAuthStore(useShallow((state) => ({ user: state.user })));
 
   // Normalized state: answers keyed by subQuestionId (stable UUID)
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -41,40 +42,31 @@ export default function StudentAssessment({
   const [isExamLocked, setIsExamLocked] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0); // Track elapsed time for early submission check
   const [isDevToolsOpen, setIsDevToolsOpen] = useState(false);
+  const [answeredStatus, setAnsweredStatus] = useState<Record<string, boolean>>(
+    {}
+  );
   const { create } = useSubmissionMutations();
 
   // Calculate if early submission is allowed
-  const canSubmitEarly = useMemo(() => {
-    if (!paper?.earlySubmissionRestrictionMinutes) {
-      return true; // No restriction, can submit anytime
-    }
-
-    const elapsedMinutes = elapsedSeconds / 60;
-    return elapsedMinutes >= paper.earlySubmissionRestrictionMinutes;
-  }, [paper?.earlySubmissionRestrictionMinutes, elapsedSeconds]);
+  const earlySubmissionRestrictionMinutes =
+    paper?.earlySubmissionRestrictionMinutes;
+  const canSubmitEarly =
+    !earlySubmissionRestrictionMinutes ||
+    elapsedSeconds / 60 >= earlySubmissionRestrictionMinutes;
 
   // Calculate early submission disabled message
-  const earlySubmitDisabledMessage = useMemo(() => {
-    if (canSubmitEarly || !paper?.earlySubmissionRestrictionMinutes) {
-      return undefined;
-    }
-
-    const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+  let earlySubmitDisabledMessage: string | undefined;
+  if (!canSubmitEarly && earlySubmissionRestrictionMinutes) {
     const remainingMinutes =
-      paper.earlySubmissionRestrictionMinutes - elapsedMinutes;
+      earlySubmissionRestrictionMinutes - Math.floor(elapsedSeconds / 60);
 
-    if (remainingMinutes > 1) {
-      return `You can submit early in ${remainingMinutes} minutes.`;
-    } else if (remainingMinutes === 1) {
-      return `You can submit early in 1 minute.`;
-    } else {
-      return `You can submit early in less than a minute.`;
-    }
-  }, [
-    canSubmitEarly,
-    paper?.earlySubmissionRestrictionMinutes,
-    elapsedSeconds,
-  ]);
+    earlySubmitDisabledMessage =
+      remainingMinutes > 1
+        ? `You can submit early in ${remainingMinutes} minutes.`
+        : remainingMinutes === 1
+          ? "You can submit early in 1 minute."
+          : "You can submit early in less than a minute.";
+  }
 
   // Initialize selected question when paper loads
   useEffect(() => {
@@ -284,12 +276,22 @@ export default function StudentAssessment({
   // Update answer by subQuestionId (stable key)
   const handleAnswerChange = useCallback(
     (subQuestionId: string, value: string) => {
+      const isAnswered = stripHtml(value).trim().length > 0;
+      const wasAnswered = Boolean(answeredStatus[subQuestionId]);
+
       setAnswers((prev) => ({
         ...prev,
         [subQuestionId]: value,
       }));
+
+      if (wasAnswered !== isAnswered) {
+        setAnsweredStatus((prev) => ({
+          ...prev,
+          [subQuestionId]: isAnswered,
+        }));
+      }
     },
-    []
+    [answeredStatus]
   );
 
   const handleQuit = () => {
@@ -342,31 +344,7 @@ export default function StudentAssessment({
       .padStart(2, "0")}`;
   };
 
-  // Track answered status separately to avoid recomputing navigation on every keystroke
-  const [answeredStatus, setAnsweredStatus] = useState<Record<string, boolean>>(
-    {}
-  );
-
-  // Update answered status only when answer transitions between empty and non-empty
-  useEffect(() => {
-    const newAnsweredStatus: Record<string, boolean> = {};
-    let hasChanged = false;
-
-    Object.entries(answers).forEach(([id, answer]) => {
-      const isAnswered = stripHtml(answer).trim().length > 0;
-      newAnsweredStatus[id] = isAnswered;
-
-      if (answeredStatus[id] !== isAnswered) {
-        hasChanged = true;
-      }
-    });
-
-    if (hasChanged) {
-      setAnsweredStatus(newAnsweredStatus);
-    }
-  }, [answers]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Build navigation data - only recalculates when answeredStatus changes
+  // Build navigation data - only recalculates when answered status changes
   const navigationData = useMemo(() => {
     if (!paper?.questions) return [];
 
@@ -383,11 +361,9 @@ export default function StudentAssessment({
   }, [paper?.questions, answeredStatus]);
 
   // Count answered questions for completion display
-  const totalAnswers = useMemo(() => {
-    return Object.values(answers).filter(
-      (answer) => stripHtml(answer).trim() !== ""
-    ).length;
-  }, [answers]);
+  const totalAnswers = Object.values(answers).filter(
+    (answer) => stripHtml(answer).trim() !== ""
+  ).length;
 
   // Navigation handlers
   const handleSelectQuestion = (questionId: string) => {
