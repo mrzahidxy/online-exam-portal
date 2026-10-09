@@ -19,7 +19,7 @@ A production-ready starter template for building PERN (Postgres, Express, React,
 - **Submission + grading APIs** that enforce early-submission rules, answer validation, and per-sub-question marks
 - **Request sanitization** with Zod + xss, rate limiting, CORS, Helmet, and compression defaults
 - **Request-scoped logging** powered by Pino + AsyncLocalStorage with automatic request IDs (pretty-printed locally via `pino-pretty`)
-- **OpenAPI documentation**, health endpoint, Docker Compose for PostgreSQL, and Google Cloud Storage uploads
+- **OpenAPI documentation**, health endpoint, Docker Compose for PostgreSQL, and Cloudinary uploads
 
 ---
 
@@ -29,7 +29,7 @@ A production-ready starter template for building PERN (Postgres, Express, React,
 - **Framework:** Express
 - **Database:** PostgreSQL + Prisma Client (UUIDs)
 - **Auth:** JSON Web Tokens (JWT) with role-based access control
-- **Uploads:** Multer + Google Cloud Storage
+- **Uploads:** Multer + Cloudinary
 - **Validation and Sanitization:** Zod + xss
 - **Security and Performance:** express-rate-limit, Helmet, compression, CORS
 - **Documentation:** swagger-jsdoc + swagger-ui-express
@@ -54,7 +54,7 @@ A production-ready starter template for building PERN (Postgres, Express, React,
 |   |-- schemas/             # Zod validation schemas
 |   |-- services/            # Business logic, Prisma access, cache integration
 |   |-- types/               # Shared TypeScript types and Express augmentation
-|   |-- utils/               # Logger, Prisma client, cache, Google Cloud Storage, env helpers
+|   |-- utils/               # Logger, Prisma client, cache, media validation, env helpers
 |-- .env.example             # Environment variable template
 |-- nodemon.json             # Development watcher configuration
 |-- package.json             # Scripts and dependencies
@@ -69,7 +69,7 @@ A production-ready starter template for building PERN (Postgres, Express, React,
 
 - **Node.js 20 or newer**
 - **Docker and Docker Compose** (for containerized database)
-- Optional providers: Google Cloud Storage (uploads)
+- Optional provider: Cloudinary (uploads; configure `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET`)
 
 ### 1. Clone and Install Dependencies
 
@@ -114,11 +114,13 @@ npm install
 
    **Optional Variables (for additional features):**
    ```bash
-   # Google Cloud Storage uploads
-   GCP_BUCKET_NAME="your_bucket_name"
+   # Cloudinary uploads (server-side only)
+   CLOUDINARY_CLOUD_NAME="your_cloud_name"
+   CLOUDINARY_API_KEY="your_api_key"
+   CLOUDINARY_API_SECRET="your_api_secret"
 
    # Upload Configuration
-   MAX_UPLOAD_SIZE=5242880
+   MAX_UPLOAD_SIZE=52428800
 
    # Client URL (for redirects)
    CLIENT_URL="http://localhost:5173"
@@ -346,10 +348,10 @@ For a complete containerized environment:
 
 ---
 
-## Google Cloud Storage Uploads
+## Cloudinary Uploads
 
 - `src/middleware/upload.middleware.ts` configures Multer for in-memory uploads with configurable size limits.
-- `src/services/upload.service.ts` streams files to your configured Google Cloud Storage bucket. Set `GCP_BUCKET_NAME` in `.env` and provide credentials via `GOOGLE_APPLICATION_CREDENTIALS` (or other ADC-supported methods) before using this endpoint.
+- `src/services/upload.service.ts` validates admin uploads and sends accepted image/video files to Cloudinary. Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` in the API runtime environment.
 
 ---
 

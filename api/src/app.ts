@@ -11,6 +11,7 @@ import { env } from './utils/env';
 import { httpLogger, logger, loggerWithRequestContext } from './utils/logger';
 import { prisma } from './utils/prisma';
 import { requestIdMiddleware } from './middleware/request-id.middleware';
+import { requireTrustedMutationOrigin } from './middleware/origin.middleware';
 import { serve, setup, swaggerSpec, swaggerUiOptions } from './middleware/swagger.middleware';
 
 const app = express();
@@ -42,10 +43,14 @@ app.use(limiter);
 app.use(helmet());
 app.use(
   cors({
-    origin: env.CORS_ORIGIN.split(',').map(origin => origin.trim()),
+    origin: (origin, callback) => {
+      const allowedOrigins = env.CORS_ORIGIN.split(',').map((value) => value.trim());
+      callback(null, !origin || allowedOrigins.includes(origin));
+    },
     credentials: true,
   })
 );
+app.use(requireTrustedMutationOrigin);
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));

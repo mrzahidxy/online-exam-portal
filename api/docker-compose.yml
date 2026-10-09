@@ -29,8 +29,10 @@ services:
     env_file:
       - .env
     environment:
-      NODE_ENV: production
+      NODE_ENV: development
       HOST: 0.0.0.0
+      COOKIE_SECURE: "false"
+      COOKIE_SAME_SITE: lax
       DATABASE_URL: postgresql://exam_user:exam_password@db:5432/eassessment_app?schema=public
       DIRECT_URL: postgresql://exam_user:exam_password@db:5432/eassessment_app?schema=public
     command: >

@@ -70,7 +70,9 @@ export const requireAuth =
         throw new HttpError(401, 'User could not be found');
       }
 
-      const effectiveRoles = (payload.roles ?? []).length > 0 ? payload.roles : [dbUser.role];
+      // JWT roles are a snapshot and may outlive an administrator demotion.
+      // Always derive authorization from the current database record.
+      const effectiveRoles = [dbUser.role];
 
       const userWithRoles = normalizeUser({
         ...(dbUser as SanitizedUser),

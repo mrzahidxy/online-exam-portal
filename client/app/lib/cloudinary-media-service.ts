@@ -10,8 +10,10 @@ export interface MediaUploadOptions {
   maxSize?: number; // in bytes
 }
 
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api").replace(/\/$/, "");
+
 /**
- * Upload media through the frontend route backed by Cloudinary.
+ * Upload media through the authenticated API route backed by Cloudinary.
  */
 export async function uploadMediaToCloudinary(
   file: File,
@@ -28,8 +30,9 @@ export async function uploadMediaToCloudinary(
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch("/api/upload-media", {
+  const response = await fetch(`${API_URL}/uploads/media`, {
     method: "POST",
+    credentials: "include",
     body: formData,
   });
 
@@ -41,7 +44,7 @@ export async function uploadMediaToCloudinary(
   }
 
   if (!response.ok) {
-    throw new Error(payload?.error || `Upload failed (${response.status})`);
+    throw new Error(payload?.message || `Upload failed (${response.status})`);
   }
 
   return {
@@ -74,7 +77,6 @@ export function validateMediaFile(file: File): void {
     "image/png",
     "image/gif",
     "image/webp",
-    "image/svg+xml",
   ];
 
   const allowedVideoTypes = [
@@ -92,7 +94,7 @@ export function validateMediaFile(file: File): void {
 
   if (!isImage && !isVideo) {
     throw new Error(
-      "File type not supported. Please upload images (JPEG, PNG, GIF, WebP, SVG) or videos (MP4, WebM, OGG, AVI, MOV)"
+      "File type not supported. Please upload images (JPEG, PNG, GIF, WebP) or videos (MP4, WebM, OGG, AVI, MOV)"
     );
   }
 }

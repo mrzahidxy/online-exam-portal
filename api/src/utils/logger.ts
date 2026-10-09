@@ -127,7 +127,7 @@ export const loggerWithRequestContext = (
   _res: express.Response,
   next: express.NextFunction
 ) => {
-  const context: RequestContext = { requestId: req.id };
+  const context: RequestContext = { requestId: req.id === undefined ? undefined : String(req.id) };
 
   requestContext.run(context, () => {
     next();

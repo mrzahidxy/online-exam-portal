@@ -50,7 +50,7 @@ export function RichTextEditor({
         (window as any).showDialogLoading?.(30);
         progress(30);
 
-        // Upload to GCS
+        // Upload through the API to Cloudinary
         const result = await uploadMediaToCloudinary(file);
 
         (window as any).showDialogLoading?.(90);
@@ -81,7 +81,7 @@ export function RichTextEditor({
     try {
       (window as any).showDialogLoading?.(20);
 
-      // Upload to GCS
+      // Upload through the API to Cloudinary
       const result = await uploadMediaToCloudinary(file);
 
       (window as any).showDialogLoading?.(90);
