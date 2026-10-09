@@ -218,6 +218,16 @@ export const normalizeDrawingAnswer = (
 export const serializeDrawingAnswer = (data: DrawingAnswerData) =>
   JSON.stringify(normalizeDrawingAnswer(data));
 
+export const drawingAnswerHasContent = (value?: string | null) => {
+  if (!value) return false;
+
+  try {
+    return normalizeDrawingAnswer(JSON.parse(value)).elements.length > 0;
+  } catch {
+    return false;
+  }
+};
+
 export const createDrawingElementId = (tool: DrawingTool) =>
   createId(tool);
 

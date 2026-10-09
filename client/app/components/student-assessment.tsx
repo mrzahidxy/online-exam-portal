@@ -9,6 +9,7 @@ import { useSubmissionMutations } from "@/hooks/mutations/useSubmissionMutations
 import { usePaper } from "@/hooks/queries/usePaper";
 import { useAuthStore } from "@/lib/auth-store";
 import { backendApiFetch } from "@/lib/api-client";
+import { drawingAnswerHasContent } from "@/lib/drawing-answer";
 import { getInteractiveTableAnswerHasValue } from "@/lib/interactive-table";
 import { TopAppBar } from "./exam/top-app-bar";
 import { QuestionCard } from "./exam/question-card";
@@ -567,6 +568,9 @@ export default function StudentAssessment({
       const subQuestion = subQuestionById.get(subQuestionId);
       if (subQuestion?.questionType === "INTERACTIVE_TABLE") {
         return getInteractiveTableAnswerHasValue(answer, subQuestion.template);
+      }
+      if (subQuestion?.questionType === "DRAWING") {
+        return drawingAnswerHasContent(answer);
       }
       return stripHtml(answer).trim() !== "";
     },

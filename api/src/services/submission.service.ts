@@ -15,6 +15,7 @@ import {
 import { AuthenticatedUser } from '../types/user';
 import { prisma } from '../utils/prisma';
 import { HttpError } from '../utils/http-error';
+import { validateDrawingAnswer } from '../validators/drawing-answer.validator';
 import { validateInteractiveTableAnswer } from '../validators/interactive-table.validator';
 
 const submissionListInclude = {
@@ -434,6 +435,9 @@ export const submissionService = {
 
       if (subQuestion.questionType === QuestionType.INTERACTIVE_TABLE) {
         validateInteractiveTableAnswer(answer.answerText, subQuestion.template);
+      }
+      if (subQuestion.questionType === QuestionType.DRAWING) {
+        validateDrawingAnswer(answer.answerText);
       }
     }
 

@@ -19,6 +19,7 @@ import {
 } from '../schemas/paper.schema';
 import { AuthenticatedUser } from '../types/user';
 import { HttpError } from '../utils/http-error';
+import { assertBetaQuestionType } from '../utils/question-types';
 import { prisma } from '../utils/prisma';
 import { validateInteractiveTableTemplateForQuestionType } from '../validators/interactive-table.validator';
 
@@ -265,6 +266,10 @@ const upsertSubQuestions = async (
         : undefined);
 
     if (target) {
+      if (subInput.questionType !== undefined) {
+        assertBetaQuestionType(subInput.questionType, target.questionType);
+      }
+
       if (seenTargets.has(target.id)) {
         throw new HttpError(
           400,
@@ -357,6 +362,7 @@ const upsertSubQuestions = async (
 
     occupiedPositionLabels.add(newKey);
     const questionType = normalizeQuestionType(subInput.questionType);
+    assertBetaQuestionType(questionType);
     validateInteractiveTableTemplateForQuestionType(questionType, subInput.template);
 
     await tx.subQuestion.create({

@@ -1187,7 +1187,7 @@ export default function QuestionBuilderPage({
                             }}
                           >
                             <SelectTrigger className="mt-1 text-sm w-full border-2 border-slate-300 hover:border-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500">
-                              <SelectValue placeholder="Select type" />
+                              <SelectValue>{currentSubQuestionTypeLabel}</SelectValue>
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="DESCRIPTIVE">
@@ -1196,23 +1196,8 @@ export default function QuestionBuilderPage({
                               <SelectItem value="MCQ">
                                 Multiple Choice (MCQ)
                               </SelectItem>
-                              <SelectItem value="GRAPH">
-                                Graph Plotting
-                              </SelectItem>
-                              <SelectItem value="TABLE">
-                                Table Answer
-                              </SelectItem>
-                              <SelectItem value="INTERACTIVE_TABLE">
-                                Interactive Table
-                              </SelectItem>
-                              <SelectItem value="CIRCUIT">
-                                Circuit Answer
-                              </SelectItem>
                               <SelectItem value="DRAWING">
                                 Drawing Answer
-                              </SelectItem>
-                              <SelectItem value="IMAGE_COMPOSITION">
-                                Image Composition
                               </SelectItem>
                             </SelectContent>
                           </Select>

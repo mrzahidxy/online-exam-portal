@@ -12,6 +12,9 @@ const questionTypeSchema = z.enum([
   'IMAGE_COMPOSITION',
 ]);
 
+export const betaQuestionTypes = ['DESCRIPTIVE', 'MCQ', 'DRAWING'] as const;
+const newQuestionTypeSchema = z.enum(betaQuestionTypes);
+
 const mcqOptionSchema = z.object({
   label: z.string().min(1),
   value: z.string().min(1),
@@ -85,7 +88,7 @@ const subQuestionInputSchema = z
     question: z.string().min(1),
     marks: z.number().int().positive(),
     position: z.number().int().positive(),
-    questionType: questionTypeSchema.optional().default('DESCRIPTIVE'),
+    questionType: newQuestionTypeSchema.optional().default('DESCRIPTIVE'),
     mcqOptions: mcqOptionsSchema.optional(),
     template: z.unknown().optional(),
     circuitTemplate: circuitTemplateSchema.optional(),
