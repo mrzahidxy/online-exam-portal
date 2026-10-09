@@ -44,20 +44,6 @@ const SECURITY_VIOLATION_LABELS: Record<SecurityViolationType, string> = {
 const POST_UNLOCK_GRACE_MS = 2500;
 const PENALTY_COOLDOWN_MS = 3000;
 const PROGRESSIVE_PENALTY_STEP_MINUTES = 10;
-const DEFAULT_INITIAL_TIME_REMAINING_SECONDS = 120;
-const configuredInitialTimeRemaining =
-  process.env.NEXT_PUBLIC_EXAM_INITIAL_BUFFER_SECONDS;
-const parsedInitialTimeRemaining =
-  configuredInitialTimeRemaining === undefined ||
-  configuredInitialTimeRemaining.trim() === ""
-    ? DEFAULT_INITIAL_TIME_REMAINING_SECONDS
-    : Number(configuredInitialTimeRemaining);
-const INITIAL_TIME_REMAINING_SECONDS = Number.isFinite(
-  parsedInitialTimeRemaining
-)
-  ? parsedInitialTimeRemaining
-  : DEFAULT_INITIAL_TIME_REMAINING_SECONDS;
-
 // Helper to strip HTML tags for answer validation
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ");
@@ -113,14 +99,12 @@ export default function StudentAssessment({
 
   // Normalized state: answers keyed by subQuestionId (stable UUID)
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [timeRemaining, setTimeRemaining] = useState<number>(
-    INITIAL_TIME_REMAINING_SECONDS
-  );
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  const [penaltySeconds, setPenaltySeconds] = useState(0);
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string>("");
-  const [isInBufferPeriod, setIsInBufferPeriod] = useState(true);
   const [hasStartedExam, setHasStartedExam] = useState(false);
   const [isExamLocked, setIsExamLocked] = useState(false);
   const [lockReason, setLockReason] = useState<SecurityViolationType | null>(
@@ -129,9 +113,9 @@ export default function StudentAssessment({
   const [adminUnlockCode, setAdminUnlockCode] = useState("");
   const [unlockError, setUnlockError] = useState<string | null>(null);
   const [isUnlocking, setIsUnlocking] = useState(false);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0); // Track elapsed time for early submission check
   const [isDevToolsOpen, setIsDevToolsOpen] = useState(false);
   const { create } = useSubmissionMutations();
+  const submissionInFlightRef = useRef(false);
   const lastUnlockAtRef = useRef<number>(0);
   const isUnlockTransitionRef = useRef(false);
   const isExamLockedRef = useRef(false);
@@ -168,7 +152,7 @@ export default function StudentAssessment({
             progressivePenaltyCountRef.current
           );
 
-          setTimeRemaining((prev) => Math.max(0, prev - penaltySeconds));
+          setPenaltySeconds((prev) => prev + penaltySeconds);
         }
       }
 
@@ -238,38 +222,41 @@ export default function StudentAssessment({
     }
   }, [adminUnlockCode, assessmentId, enterFullscreen]);
 
-  // Calculate if early submission is allowed
-  const canSubmitEarly = useMemo(() => {
-    if (!paper?.earlySubmissionRestrictionMinutes) {
-      return true; // No restriction, can submit anytime
-    }
+  useEffect(() => {
+    const clock = window.setInterval(() => setCurrentTime(Date.now()), 1000);
+    return () => window.clearInterval(clock);
+  }, []);
 
-    const elapsedMinutes = elapsedSeconds / 60;
-    return elapsedMinutes >= paper.earlySubmissionRestrictionMinutes;
-  }, [paper?.earlySubmissionRestrictionMinutes, elapsedSeconds]);
+  const startsAt = paper ? new Date(paper.startDate).getTime() : 0;
+  const endsAt = paper ? new Date(paper.endDate).getTime() : 0;
+  const submissionOpensAt =
+    startsAt + (paper?.earlySubmissionRestrictionMinutes ?? 0) * 60 * 1000;
+  const isWithinExamWindow =
+    !!paper && currentTime >= startsAt && currentTime <= endsAt;
+  const canStartExam = isWithinExamWindow;
+  const timeRemaining = paper
+    ? Math.max(0, Math.ceil((endsAt - currentTime) / 1000) - penaltySeconds)
+    : 0;
+
+  // Keep submission controls on the same schedule enforced by the API.
+  const canSubmitEarly = useMemo(() => {
+    return isWithinExamWindow && currentTime >= submissionOpensAt;
+  }, [currentTime, isWithinExamWindow, submissionOpensAt]);
 
   // Calculate early submission disabled message
   const earlySubmitDisabledMessage = useMemo(() => {
-    if (canSubmitEarly || !paper?.earlySubmissionRestrictionMinutes) {
+    if (canSubmitEarly) {
       return undefined;
     }
-
-    const elapsedMinutes = Math.floor(elapsedSeconds / 60);
-    const remainingMinutes =
-      paper.earlySubmissionRestrictionMinutes - elapsedMinutes;
-
-    if (remainingMinutes > 1) {
-      return `You can submit early in ${remainingMinutes} minutes.`;
-    } else if (remainingMinutes === 1) {
-      return `You can submit early in 1 minute.`;
-    } else {
-      return `You can submit early in less than a minute.`;
+    if (!paper) return undefined;
+    if (currentTime < startsAt) return "The exam has not started yet.";
+    if (currentTime > endsAt) return "The exam submission window has closed.";
+    if (currentTime < submissionOpensAt) {
+      const remainingMinutes = Math.ceil((submissionOpensAt - currentTime) / 60000);
+      return `You can submit in ${remainingMinutes} minute${remainingMinutes === 1 ? "" : "s"}.`;
     }
-  }, [
-    canSubmitEarly,
-    paper?.earlySubmissionRestrictionMinutes,
-    elapsedSeconds,
-  ]);
+    return undefined;
+  }, [canSubmitEarly, currentTime, endsAt, paper, startsAt, submissionOpensAt]);
 
   // Initialize selected question when paper loads
   useEffect(() => {
@@ -283,31 +270,6 @@ export default function StudentAssessment({
       }
     }
   }, [paper, selectedQuestionId]);
-
-  // Unified timer countdown (buffer period then exam period)
-  useEffect(() => {
-    if (submitted || !hasStartedExam) return;
-
-    const timer = window.setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 0) {
-          if (isInBufferPeriod && paper) {
-            // Buffer period just ended, start exam timer
-            setIsInBufferPeriod(false);
-            return paper.durationMinutes * 60;
-          }
-          return 0;
-        }
-        return prev - 1;
-      });
-      // Increment elapsed seconds only after buffer period (during actual exam)
-      if (!isInBufferPeriod) {
-        setElapsedSeconds((prev) => prev + 1);
-      }
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, [submitted, hasStartedExam, isInBufferPeriod, paper]);
 
   // Security: Detect and block copy/paste shortcuts
   useEffect(() => {
@@ -577,7 +539,14 @@ export default function StudentAssessment({
     [subQuestionById]
   );
 
-  const handleSubmit = () => {
+  const submitAssessment = useCallback((isDeadlineSubmission: boolean) => {
+    if (submissionInFlightRef.current || submitted || !hasStartedExam) return;
+    if (!canSubmitEarly && !isDeadlineSubmission) {
+      setSubmissionError(earlySubmitDisabledMessage ?? "Submission is not available yet.");
+      return;
+    }
+
+    submissionInFlightRef.current = true;
     setIsSubmitting(true);
     setSubmissionError(null);
 
@@ -604,6 +573,7 @@ export default function StudentAssessment({
         onError: (error: any) => {
           console.error("Submission error:", error);
           setIsSubmitting(false);
+          submissionInFlightRef.current = false;
           const errorMessage =
             error?.message ||
             (typeof error === "string" ? error : "") ||
@@ -612,7 +582,30 @@ export default function StudentAssessment({
         },
       }
     );
-  };
+  }, [
+    answers,
+    assessmentId,
+    canSubmitEarly,
+    create,
+    earlySubmitDisabledMessage,
+    hasStartedExam,
+    isAnswerFilled,
+    submitted,
+  ]);
+
+  const handleSubmit = useCallback(() => {
+    submitAssessment(false);
+  }, [submitAssessment]);
+
+  useEffect(() => {
+    if (
+      hasStartedExam &&
+      !submitted &&
+      (timeRemaining <= 1 || currentTime > endsAt)
+    ) {
+      submitAssessment(true);
+    }
+  }, [currentTime, endsAt, hasStartedExam, submitted, submitAssessment, timeRemaining]);
 
   // Track answered status separately to avoid recomputing navigation on every keystroke
   const [answeredStatus, setAnsweredStatus] = useState<Record<string, boolean>>(
@@ -709,6 +702,7 @@ export default function StudentAssessment({
 
   // Handler to start exam and enter fullscreen
   const handleStartExam = async () => {
+    if (!canStartExam) return;
     // Check if DevTools are open before starting
     if (isDevToolsOpen) {
       alert(
@@ -823,10 +817,23 @@ export default function StudentAssessment({
               size="lg"
               className="w-full"
               onClick={handleStartExam}
-              disabled={isDevToolsOpen}
+              disabled={isDevToolsOpen || !canStartExam}
             >
-              {isDevToolsOpen ? "Close DevTools to Start" : "Start Exam"}
+              {isDevToolsOpen
+                ? "Close DevTools to Start"
+                : currentTime < startsAt
+                ? "Exam Not Open Yet"
+                : currentTime > endsAt
+                ? "Exam Window Closed"
+                : "Start Exam"}
             </Button>
+            {!canStartExam && (
+              <p className="text-center text-sm text-gray-600">
+                {currentTime < startsAt
+                  ? `The exam opens ${new Date(paper.startDate).toLocaleString()}.`
+                  : "The exam submission window has closed."}
+              </p>
+            )}
           </Card>
         </div>
       </div>
@@ -961,7 +968,6 @@ export default function StudentAssessment({
           onSubmit={handleSubmit}
           canSubmitEarly={canSubmitEarly}
           earlySubmitDisabledMessage={earlySubmitDisabledMessage}
-          isInBufferPeriod={isInBufferPeriod}
         />
 
         {/* Main Content Area */}
@@ -974,7 +980,7 @@ export default function StudentAssessment({
                   question={selectedQuestion}
                   answers={answers}
                   onAnswerChange={handleAnswerChange}
-                  readonly={isInBufferPeriod || isExamLocked}
+                  readonly={isExamLocked}
                 />
               ) : (
                 <div className="text-center text-gray-500 py-12">
@@ -996,11 +1002,9 @@ export default function StudentAssessment({
                   size="lg"
                   onClick={handleSubmit}
                   className="gap-2 px-8"
-                  disabled={isSubmitting || isInBufferPeriod || !canSubmitEarly}
+                  disabled={isSubmitting || !canSubmitEarly}
                   title={
-                    isInBufferPeriod
-                      ? "Submit will be available after reading time"
-                      : !canSubmitEarly
+                    !canSubmitEarly
                       ? earlySubmitDisabledMessage
                       : ""
                   }
@@ -1008,11 +1012,7 @@ export default function StudentAssessment({
                   <Send className="w-4 h-4" />
                   {isSubmitting ? "Submitting..." : "Submit Assessment"}
                 </Button>
-                {isInBufferPeriod ? (
-                  <p className="text-sm text-gray-600 text-center">
-                    Submit will be available after reading time
-                  </p>
-                ) : !canSubmitEarly && earlySubmitDisabledMessage ? (
+                {!canSubmitEarly && earlySubmitDisabledMessage ? (
                   <p className="text-sm text-gray-600 text-center">
                     {earlySubmitDisabledMessage}
                   </p>

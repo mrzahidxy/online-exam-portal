@@ -18,7 +18,7 @@ export const submissionIdParamSchema = z.object({
 
 export const createSubmissionSchema = z.object({
   paperId: z.string().uuid(),
-  answers: z.array(answerInputSchema).min(1),
+  answers: z.array(answerInputSchema),
 });
 
 export const listSubmissionsQuerySchema = z.object({

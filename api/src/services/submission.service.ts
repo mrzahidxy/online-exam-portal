@@ -241,6 +241,9 @@ const validatePaperWindow = (paper: { startDate: Date; endDate: Date; earlySubmi
   }
 };
 
+const isUniqueConstraintError = (error: unknown): error is { code: string } =>
+  typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
+
 const filterForActor = (
   actor: AuthenticatedUser,
   query?: ListSubmissionsQuery
@@ -441,24 +444,34 @@ export const submissionService = {
       }
     }
 
-    const submission = await prisma.$transaction(async (tx) => {
-      const created = await tx.submission.create({
-        data: {
-          studentId: actor.id,
-          paperId: paper.id,
-        },
-      });
+    let submission: { id: string };
+    try {
+      submission = await prisma.$transaction(async (tx) => {
+        const created = await tx.submission.create({
+          data: {
+            studentId: actor.id,
+            paperId: paper.id,
+          },
+        });
 
-      await tx.answer.createMany({
-        data: input.answers.map((answer) => ({
-          submissionId: created.id,
-          subQuestionId: answer.subQuestionId,
-          answerText: answer.answerText,
-        })),
-      });
+        await tx.answer.createMany({
+          data: input.answers.map((answer) => ({
+            submissionId: created.id,
+            subQuestionId: answer.subQuestionId,
+            answerText: answer.answerText,
+          })),
+        });
 
-      return created;
-    });
+        return created;
+      });
+    } catch (error) {
+      // The unique student/paper constraint is the final guard when two requests
+      // pass the preflight lookup at the same time.
+      if (isUniqueConstraintError(error)) {
+        throw new HttpError(409, 'You have already submitted answers for this paper');
+      }
+      throw error;
+    }
 
     return prisma.submission.findUniqueOrThrow({
       where: { id: submission.id },
@@ -492,16 +505,26 @@ export const submissionService = {
       select: { id: true, marks: true },
     });
     const marksById = new Map(subQuestions.map((sub) => [sub.id, sub.marks]));
+    const gradedSubQuestionIds = new Set<string>();
 
     for (const grade of input.grades) {
       if (!marksById.has(grade.subQuestionId)) {
         throw new HttpError(400, 'Invalid sub-question for grading');
       }
 
+      if (gradedSubQuestionIds.has(grade.subQuestionId)) {
+        throw new HttpError(400, 'Duplicate sub-question grades are not allowed');
+      }
+      gradedSubQuestionIds.add(grade.subQuestionId);
+
       const maxMarks = marksById.get(grade.subQuestionId) ?? 0;
       if (grade.assignedMarks > maxMarks) {
         throw new HttpError(400, 'Assigned marks exceed the maximum for a sub-question');
       }
+    }
+
+    if (gradedSubQuestionIds.size !== marksById.size) {
+      throw new HttpError(400, 'Every sub-question must be graded before the submission is reviewed');
     }
 
     await prisma.$transaction(async (tx) => {
