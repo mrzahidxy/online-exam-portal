@@ -1,29 +1,38 @@
-FROM node:20-slim
-
-# Install OpenSSL for Prisma
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends openssl ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+FROM node:20-slim AS build
 
 WORKDIR /app
 
-ENV PORT=8080 HOST=0.0.0.0 NODE_ENV=production
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates openssl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy package files and install all dependencies (including dev dependencies for build)
 COPY package*.json ./
-
-# Copy all
-COPY . .
-
-# Install Dependencies
-RUN npm install
-
-# Compile TypeScript in the image; application secrets are supplied at runtime.
-RUN npm run build
-
-# Generate Prisma client
+COPY prisma ./prisma
+RUN npm ci
 RUN npx prisma generate
 
-EXPOSE $PORT
+COPY tsconfig.json ./
+COPY src ./src
+RUN npm run build
+RUN npm prune --omit=dev --ignore-scripts
 
-CMD ["npm", "run", "start:prod"]
+FROM node:20-slim AS runtime
+
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=8080
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/package.json ./package.json
+COPY --from=build --chown=node:node /app/dist ./dist
+
+USER node
+EXPOSE 8080
+
+CMD ["node", "dist/server.js"]

@@ -19,7 +19,7 @@ A production-ready starter template for building PERN (Postgres, Express, React,
 - **Submission + grading APIs** that enforce early-submission rules, answer validation, and per-sub-question marks
 - **Request sanitization** with Zod + xss, rate limiting, CORS, Helmet, and compression defaults
 - **Request-scoped logging** powered by Pino + AsyncLocalStorage with automatic request IDs (pretty-printed locally via `pino-pretty`)
-- **OpenAPI documentation**, health endpoint, Docker Compose for PostgreSQL, and Cloudinary uploads
+- **OpenAPI documentation**, health endpoint, production Docker deployment, and Cloudinary uploads
 
 ---
 
@@ -68,7 +68,6 @@ A production-ready starter template for building PERN (Postgres, Express, React,
 ### Prerequisites
 
 - **Node.js 20 or newer**
-- **Docker and Docker Compose** (for containerized database)
 - Optional provider: Cloudinary (uploads; configure `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET`)
 
 ### 1. Clone and Install Dependencies
@@ -100,9 +99,10 @@ npm install
    NODE_ENV=development
    TRUST_PROXY=false
 
-   # Database (Docker Compose will override these)
-   DATABASE_URL="postgresql://exam_user:exam_password@localhost:5433/eassessment_app?schema=public"
-   DIRECT_URL="postgresql://exam_user:exam_password@localhost:5433/eassessment_app?schema=public"
+   # Use the Neon development branch connection strings from the Neon dashboard.
+   # DATABASE_URL should use the pooled connection; DIRECT_URL should use the direct connection.
+   DATABASE_URL="postgresql://neondb_owner:replace_me@ep-your-dev-branch-pooler.region.aws.neon.tech/neondb?sslmode=require"
+   DIRECT_URL="postgresql://neondb_owner:replace_me@ep-your-dev-branch.region.aws.neon.tech/neondb?sslmode=require"
 
    # JWT Authentication (REQUIRED)
    JWT_SECRET="your-super-secret-jwt-key-here-at-least-16-characters"
@@ -126,37 +126,13 @@ npm install
    CLIENT_URL="http://localhost:5173"
    ```
 
-### 3. Database Setup with Docker
+### 3. Database Setup with Neon
 
-1. **Start the database service:**
+1. Create or select a Neon development branch dedicated to local testing.
+2. Set `DATABASE_URL` to that branch's pooled connection string and `DIRECT_URL` to its direct connection string in `.env`.
+3. Generate Prisma Client with `npm run prisma:generate`.
 
-   ```bash
-   # Start PostgreSQL container
-   docker-compose up -d db
-   ```
-
-2. **Generate Prisma client and run migrations:**
-
-   ```bash
-   # Generate Prisma client
-   npm run prisma:generate
-
-   # Run database migrations
-   npm run prisma:migrate
-   ```
-
-3. **Seed the database with sample data:**
-
-   ```bash
-   # Run the seed script (admins, students, sample paper, requests, submissions)
-   npm run seed
-   ```
-
-   **Seed Data Includes:**
-   - **Admin User:** `admin@exam.io`
-   - **Students:** `student1@exam.io`, `student2@exam.io` with school codes
-   - **Mathematics Mock Paper:** nested questions/sub-questions ready to serve
-   - **Access Requests & Submission:** one approved, one pending request, plus a graded submission
+The checked-in Prisma migrations and the existing Neon branch history need reconciliation. Until that is resolved, do not run migration, reset, schema-push, or seed commands against the current Neon branch. Local API reads and writes go to whichever branch those URLs select.
 
 ### 4. Run the Application
 
@@ -173,45 +149,7 @@ npm start
 
 The API will be available at `http://localhost:8080` with routes under `/api` and `/api/v1`.
 
-### 5. Alternative: Full Docker Setup
-
-For a complete containerized environment:
-
-1. **Ensure `.env` is configured** (Docker Compose will use it)
-
-2. **Build and start all services:**
-
-   ```bash
-   # Build and start PostgreSQL and API
-   docker-compose up --build
-   ```
-
-3. **Access the application:**
-   - **API:** http://localhost:8080
-   - **Swagger Documentation:** http://localhost:8080/api-docs
-   - **Health Check:** http://localhost:8080/health
-
-4. **Run migrations in containers:**
-
-   ```bash
-   # For new migrations
-   docker-compose exec api npx prisma migrate dev --name your_migration_name
-
-   # For seeding
-   docker-compose exec api npx prisma db seed
-   ```
-
-5. **Stop the services:**
-
-   ```bash
-   # Stop containers
-   docker-compose down
-
-   # Stop and remove volumes (WARNING: deletes database data)
-   docker-compose down -v
-   ```
-
-### 7. API Documentation
+### 5. API Documentation
 
 - Swagger UI is available at `GET /api-docs`.
 - Use the built-in "Authorize" button or log in via the auth routes; successful auth responses are cached by Swagger to persist the JWT for subsequent calls.
@@ -231,16 +169,7 @@ For a complete containerized environment:
 - `npm run prisma:studio` - Launch Prisma Studio (database GUI at http://localhost:5555)
 - `npm run seed` - Execute the Prisma seed script (populates admin, students, sample paper, requests, and submissions)
 
-### Docker
-- `docker-compose up -d db` - Start database container
-- `docker-compose up --build` - Build and start full stack (Postgres + API)
-- `docker-compose down` - Stop all services
-- `docker-compose down -v` - Stop services and remove volumes (deletes data)
-
-### Database Management (with Docker)
-- `docker-compose exec api npx prisma migrate dev --name migration_name` - Create new migration
-- `docker-compose exec api npx prisma db seed` - Run seed script in container
-- `docker-compose exec api npx prisma studio` - Access Prisma Studio in container
+Migration and seed commands write to the database selected by `.env`. Use a dedicated Neon development branch; the current migration history must be reconciled before applying migrations or seed data.
 
 ---
 
@@ -376,21 +305,19 @@ The `prisma/seed.ts` script creates:
 # View database in browser
 npm run prisma:studio
 
-# Reset and reseed (development)
-npx prisma migrate reset
-
-# Push schema changes (development only)
-npx prisma db push
+# Check migration state without applying changes
+npx prisma migrate status
 ```
+
+Do not run `migrate reset` or `db push` against a shared Neon branch.
 
 ## Development Workflow
 
 ### Local Development
-1. **Start Services**: `docker-compose up -d db`
-2. **Install Dependencies**: `npm install`
-3. **Configure Environment**: `cp .env.example .env`
-4. **Setup Database**: `npm run prisma:migrate && npm run seed`
-5. **Start Development**: `npm run dev`
+1. **Install Dependencies**: `npm install`
+2. **Configure Environment**: copy `.env.example` to `.env` and enter the Neon development branch URLs.
+3. **Generate Prisma Client**: `npm run prisma:generate`
+4. **Start Development**: `npm run dev`
 
 ### Testing API
 - **Swagger UI**: http://localhost:8080/api-docs
@@ -399,9 +326,9 @@ npx prisma db push
 
 ### Production Deployment
 1. **Build Application**: `npm run build`
-2. **Use Docker Compose**: `docker-compose up --build`
-3. **Database Migrations**: Run automatically on container start
-4. **Environment Variables**: Configure in production environment
+2. **Deploy to the VPS**: run the `deploy-api.yml` GitHub Actions workflow, which publishes a versioned image and deploys it with Docker Compose.
+3. **Database Migrations**: Not run automatically; apply only after the migration history is reconciled.
+4. **Environment Variables**: Configure Neon connection strings in the production environment file.
 
 ## Next Steps
 

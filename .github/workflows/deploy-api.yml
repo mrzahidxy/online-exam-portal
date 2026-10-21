@@ -1,0 +1,106 @@
+name: Build and deploy API
+
+on:
+  pull_request:
+    paths:
+      - "api/**"
+      - ".github/workflows/deploy-api.yml"
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - ".github/workflows/deploy-api.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-api
+  cancel-in-progress: false
+
+jobs:
+  build-and-push:
+    name: Build and publish API image
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
+
+      - name: Build and push versioned image
+        env:
+          IMAGE: ${{ secrets.DOCKERHUB_USERNAME && format('{0}/e-exam-api', secrets.DOCKERHUB_USERNAME) || 'e-exam-api' }}
+          TAG: ${{ github.sha }}
+        run: |
+          docker build --pull -f api/Dockerfile -t "$IMAGE:$TAG" api
+
+      - name: Push versioned image
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/e-exam-api
+          TAG: ${{ github.sha }}
+        run: |
+          docker push "$IMAGE:$TAG"
+
+  deploy:
+    name: Deploy API to VPS
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out deployment config
+        uses: actions/checkout@v7
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"
+
+      - name: Log in to Docker Hub on VPS
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          printf '%s' "$DOCKERHUB_TOKEN" | ssh \
+            -i "$HOME/.ssh/deploy_key" \
+            -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" \
+            "docker login --username '$DOCKERHUB_USERNAME' --password-stdin"
+
+      - name: Copy Compose config to VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" "mkdir -p /opt/apps/e-exam"
+          scp -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes \
+            api/docker-compose.yml \
+            "$VPS_USER@$VPS_HOST:/opt/apps/e-exam/docker-compose.yml"
+
+      - name: Deploy and verify container health
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE="docker.io/$DOCKERHUB_USERNAME/e-exam-api:$IMAGE_TAG"
+          ssh -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" \
+            "cd /opt/apps/e-exam && API_IMAGE='$IMAGE' docker compose -f docker-compose.yml pull api && API_IMAGE='$IMAGE' docker compose -f docker-compose.yml up -d --no-build --remove-orphans api && for attempt in \$(seq 1 30); do state=\$(docker inspect --format='{{.State.Health.Status}}' e-exam-api 2>/dev/null || true); if [ \"\$state\" = healthy ]; then exit 0; fi; sleep 2; done; docker logs --tail=100 e-exam-api; exit 1"
