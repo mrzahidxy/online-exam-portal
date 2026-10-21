@@ -8,5 +8,6 @@ export const upload = multer({
   storage,
   limits: {
     fileSize: env.MAX_UPLOAD_SIZE,
+    files: 1,
   },
 });

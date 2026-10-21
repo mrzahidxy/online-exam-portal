@@ -38,5 +38,5 @@ Frontend client for the eAssessment platform.
 ## Notes
 
 - Auth uses backend cookies, so frontend requests must include credentials.
-- Media uploads are handled by the frontend upload route and stored directly in Google Cloud Storage.
+- Media uploads are handled by the frontend upload route and stored in Cloudinary.
 - Do not commit `.env.local` or other secret files.

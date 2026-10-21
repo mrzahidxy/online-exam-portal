@@ -1,19 +1,21 @@
-// Client-side service for media uploads through the frontend route
+"use client";
 
 export interface MediaUploadResult {
   url: string;
   fileName: string;
-  mediaType: 'image' | 'video';
+  mediaType: "image" | "video";
 }
 
 export interface MediaUploadOptions {
   maxSize?: number; // in bytes
 }
 
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api").replace(/\/$/, "");
+
 /**
- * Upload media file through the frontend upload route backed by Google Cloud Storage.
+ * Upload media through the authenticated API route backed by Cloudinary.
  */
-export async function uploadMediaToGCS(
+export async function uploadMediaToCloudinary(
   file: File,
   options: MediaUploadOptions = {}
 ): Promise<MediaUploadResult> {
@@ -28,8 +30,9 @@ export async function uploadMediaToGCS(
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch("/api/upload-media", {
+  const response = await fetch(`${API_URL}/uploads/media`, {
     method: "POST",
+    credentials: "include",
     body: formData,
   });
 
@@ -41,28 +44,27 @@ export async function uploadMediaToGCS(
   }
 
   if (!response.ok) {
-    throw new Error(payload?.error || `Upload failed (${response.status})`);
+    throw new Error(payload?.message || `Upload failed (${response.status})`);
   }
 
   return {
-    url: payload.url, // signed URL from the upload response
-    fileName: payload.fileName, // stored object name
+    url: payload.url,
+    fileName: payload.fileName,
     mediaType: payload.mediaType,
   };
 }
 
-
 /**
  * Determine if file is image or video
  */
-export function getMediaType(file: File): 'image' | 'video' {
-  if (file.type.startsWith('image/')) {
-    return 'image';
-  } else if (file.type.startsWith('video/')) {
-    return 'video';
+export function getMediaType(file: File): "image" | "video" {
+  if (file.type.startsWith("image/")) {
+    return "image";
   }
-  // Default to image for unknown types
-  return 'image';
+  if (file.type.startsWith("video/")) {
+    return "video";
+  }
+  return "image";
 }
 
 /**
@@ -70,21 +72,21 @@ export function getMediaType(file: File): 'image' | 'video' {
  */
 export function validateMediaFile(file: File): void {
   const allowedImageTypes = [
-    'image/jpeg', 
-    'image/jpg', 
-    'image/png', 
-    'image/gif', 
-    'image/webp',
-    'image/svg+xml'
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/gif",
+    "image/webp",
   ];
-  
+
   const allowedVideoTypes = [
-    'video/mp4', 
-    'video/webm', 
-    'video/ogg', 
-    'video/avi', 
-    'video/mov',
-    'video/quicktime'
+    "video/mp4",
+    "video/webm",
+    "video/ogg",
+    "video/avi",
+    "video/x-msvideo",
+    "video/mov",
+    "video/quicktime",
   ];
 
   const isImage = allowedImageTypes.includes(file.type);
@@ -92,7 +94,7 @@ export function validateMediaFile(file: File): void {
 
   if (!isImage && !isVideo) {
     throw new Error(
-      'File type not supported. Please upload images (JPEG, PNG, GIF, WebP, SVG) or videos (MP4, WebM, OGG, AVI, MOV)'
+      "File type not supported. Please upload images (JPEG, PNG, GIF, WebP) or videos (MP4, WebM, OGG, AVI, MOV)"
     );
   }
 }
@@ -104,11 +106,11 @@ export function createMediaFileInput(
   accept: string,
   onFileSelect: (file: File) => void
 ): void {
-  const input = document.createElement('input');
-  input.setAttribute('type', 'file');
-  input.setAttribute('accept', accept);
-  input.style.display = 'none';
-  
+  const input = document.createElement("input");
+  input.setAttribute("type", "file");
+  input.setAttribute("accept", accept);
+  input.style.display = "none";
+
   input.onchange = function () {
     const file = (this as HTMLInputElement).files?.[0];
     if (file) {
@@ -116,12 +118,12 @@ export function createMediaFileInput(
         validateMediaFile(file);
         onFileSelect(file);
       } catch (error) {
-        console.error('File validation error:', error);
-        alert(error instanceof Error ? error.message : 'Invalid file selected');
+        console.error("File validation error:", error);
+        alert(error instanceof Error ? error.message : "Invalid file selected");
       }
     }
   };
-  
+
   input.click();
 }
 
@@ -129,11 +131,11 @@ export function createMediaFileInput(
  * Get file size in human readable format
  */
 export function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 Bytes';
-  
+  if (bytes === 0) return "0 Bytes";
+
   const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const sizes = ["Bytes", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }

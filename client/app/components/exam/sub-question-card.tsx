@@ -4,7 +4,14 @@ import { memo } from "react";
 import he from "he";
 import { RichTextEditor } from "../rich-text-editor";
 import { GraphAnswerEditor } from "./graph-answer";
+import { DrawingAnswerEditor } from "./drawing-answer";
+import { ImageCompositionAnswerEditor } from "./image-composition-answer";
+import { CircuitAnswerEditor } from "./circuit-answer";
 import { TableAnswerEditor } from "./table-answer";
+import { InteractiveTableStudentAnswer } from "./interactive-table-renderer";
+import type { CircuitTemplate } from "@/lib/circuit-template";
+import type { ImageCompositionTemplate } from "@/lib/image-composition-template";
+import type { InteractiveTableTemplate } from "@/lib/interactive-table";
 
 interface SubQuestionCardProps {
   questionPosition: number;
@@ -18,6 +25,9 @@ interface SubQuestionCardProps {
       value: string;
     }>;
   } | null;
+  circuitTemplate?: CircuitTemplate | null;
+  imageCompositionTemplate?: ImageCompositionTemplate | null;
+  template?: InteractiveTableTemplate | null;
   answer: string;
   onAnswerChange: (value: string) => void;
   subQuestionId: string;
@@ -42,6 +52,9 @@ export const SubQuestionCard = memo(function SubQuestionCard({
   marks,
   questionType,
   mcqOptions,
+  circuitTemplate,
+  imageCompositionTemplate,
+  template,
   answer,
   onAnswerChange,
   subQuestionId,
@@ -49,7 +62,11 @@ export const SubQuestionCard = memo(function SubQuestionCard({
 }: SubQuestionCardProps) {
   const isMCQ = questionType === "MCQ" && mcqOptions;
   const isGraph = questionType === "GRAPH";
+  const isDrawing = questionType === "DRAWING";
+  const isImageComposition = questionType === "IMAGE_COMPOSITION";
+  const isInteractiveTable = questionType === "INTERACTIVE_TABLE";
   const isTable = questionType === "TABLE";
+  const isCircuit = questionType === "CIRCUIT";
 
   return (
     <div
@@ -107,6 +124,33 @@ export const SubQuestionCard = memo(function SubQuestionCard({
             value={answer}
             onChange={onAnswerChange}
             readonly={readonly}
+          />
+        ) : isDrawing ? (
+          <DrawingAnswerEditor
+            value={answer}
+            onChange={onAnswerChange}
+            readonly={readonly}
+          />
+        ) : isImageComposition ? (
+          <ImageCompositionAnswerEditor
+            value={answer}
+            onChange={onAnswerChange}
+            readonly={readonly}
+            template={imageCompositionTemplate}
+          />
+        ) : isCircuit ? (
+          <CircuitAnswerEditor
+            value={answer}
+            onChange={onAnswerChange}
+            readonly={readonly}
+            template={circuitTemplate}
+          />
+        ) : isInteractiveTable ? (
+          <InteractiveTableStudentAnswer
+            value={answer}
+            onChange={onAnswerChange}
+            readonly={readonly}
+            template={template}
           />
         ) : isTable ? (
           <TableAnswerEditor

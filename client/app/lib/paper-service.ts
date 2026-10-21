@@ -1,4 +1,7 @@
 import axios from "axios";
+import type { CircuitTemplate } from "./circuit-template";
+import type { ImageCompositionTemplate } from "./image-composition-template";
+import type { InteractiveTableTemplate } from "./interactive-table";
 
 export interface PaperPayload {
   title: string;
@@ -24,14 +27,17 @@ export interface PaperResponse extends PaperPayload {
         contentHtml?: string;
         marks?: number;
         position?: number;
-        questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE";
+        questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "INTERACTIVE_TABLE" | "CIRCUIT" | "DRAWING" | "IMAGE_COMPOSITION";
         mcqOptions?: {
           options: Array<{
             label: string;
             value: string;
-        }>;
-      };
-    }>;
+          }>;
+        } | null;
+        circuitTemplate?: CircuitTemplate | null;
+        imageCompositionTemplate?: ImageCompositionTemplate | null;
+        template?: InteractiveTableTemplate | null;
+      }>;
   }>;
 }
 
@@ -50,18 +56,21 @@ export interface PaperQuestionPayload {
   contentHtml?: string;
   marks: number;
   position: number;
-    subQuestions?: Array<{
-      label: string;
-      question: string;
-      marks: number;
-      position: number;
-      questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE";
-      mcqOptions?: {
-        options: Array<{
-          label: string;
+  subQuestions?: Array<{
+    label: string;
+    question: string;
+    marks: number;
+    position: number;
+    questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "INTERACTIVE_TABLE" | "CIRCUIT" | "DRAWING" | "IMAGE_COMPOSITION";
+    mcqOptions?: {
+      options: Array<{
+        label: string;
         value: string;
       }>;
-    };
+    } | null;
+    circuitTemplate?: CircuitTemplate | null;
+    imageCompositionTemplate?: ImageCompositionTemplate | null;
+    template?: InteractiveTableTemplate | null;
   }>;
 }
 
@@ -79,15 +88,12 @@ export async function createPaper(payload: PaperPayload) {
 }
 
 export async function fetchPaper(paperId: string) {
-  const response = await axios.get<PaperResponse>(
-    `${API_URL}/papers/${paperId}`,
-    {
-      withCredentials: true,
-      headers: {
-        Accept: "*/*",
-      },
-    }
-  );
+  const response = await axios.get<PaperResponse>(`${API_URL}/papers/${paperId}`, {
+    withCredentials: true,
+    headers: {
+      Accept: "*/*",
+    },
+  });
 
   return unwrapResponse<PaperResponse>(response.data);
 }

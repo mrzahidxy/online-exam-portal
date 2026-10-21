@@ -1,7 +1,19 @@
 import { PaperStatus } from '@prisma/client';
 import { z } from 'zod';
 
-const questionTypeSchema = z.enum(['DESCRIPTIVE', 'MCQ', 'GRAPH', 'TABLE']);
+const questionTypeSchema = z.enum([
+  'DESCRIPTIVE',
+  'MCQ',
+  'GRAPH',
+  'TABLE',
+  'INTERACTIVE_TABLE',
+  'CIRCUIT',
+  'DRAWING',
+  'IMAGE_COMPOSITION',
+]);
+
+export const betaQuestionTypes = ['DESCRIPTIVE', 'MCQ', 'DRAWING'] as const;
+const newQuestionTypeSchema = z.enum(betaQuestionTypes);
 
 const mcqOptionSchema = z.object({
   label: z.string().min(1),
@@ -12,14 +24,75 @@ const mcqOptionsSchema = z.object({
   options: z.array(mcqOptionSchema).min(2),
 });
 
+const circuitComponentSchema = z.object({
+  id: z.string().min(1),
+  type: z.enum(['battery', 'switch', 'bulb']),
+  x: z.number().int(),
+  y: z.number().int(),
+});
+
+const circuitTemplateSchema = z.object({
+  version: z.literal(1),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  components: z.array(circuitComponentSchema).min(1),
+}).superRefine((value, ctx) => {
+  const requiredTypes: Array<'battery' | 'switch' | 'bulb'> = ['battery', 'switch', 'bulb'];
+
+  for (const type of requiredTypes) {
+    if (!value.components.some((component) => component.type === type)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['components'],
+        message: `Circuit template must include at least one ${type}`,
+      });
+    }
+  }
+});
+
+const imageCompositionAssetSchema = z.object({
+  id: z.string().min(1),
+  src: z.string().min(1),
+  name: z.string().optional(),
+  x: z.number().int(),
+  y: z.number().int(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  zIndex: z.number().int(),
+  locked: z.boolean().optional(),
+});
+
+const imageCompositionTemplateSchema = z.object({
+  version: z.literal(1),
+  canvas: z.object({
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    backgroundColor: z.string().min(1),
+  }),
+  backgroundImage: z
+    .object({
+      src: z.string().min(1),
+      name: z.string().optional(),
+      width: z.number().int().positive(),
+      height: z.number().int().positive(),
+      fit: z.enum(['cover', 'contain']),
+    })
+    .nullable()
+    .optional(),
+  assets: z.array(imageCompositionAssetSchema),
+});
+
 const subQuestionInputSchema = z
   .object({
     label: z.string().min(1),
     question: z.string().min(1),
     marks: z.number().int().positive(),
     position: z.number().int().positive(),
-    questionType: questionTypeSchema.optional().default('DESCRIPTIVE'),
+    questionType: newQuestionTypeSchema.optional().default('DESCRIPTIVE'),
     mcqOptions: mcqOptionsSchema.optional(),
+    template: z.unknown().optional(),
+    circuitTemplate: circuitTemplateSchema.optional(),
+    imageCompositionTemplate: imageCompositionTemplateSchema.optional(),
   })
   .refine(
     (data) => {
@@ -49,6 +122,9 @@ const updateSubQuestionInputSchema = z
     position: z.number().int().positive().optional(),
     questionType: questionTypeSchema.optional(),
     mcqOptions: mcqOptionsSchema.optional(),
+    template: z.unknown().optional(),
+    circuitTemplate: circuitTemplateSchema.optional(),
+    imageCompositionTemplate: imageCompositionTemplateSchema.optional(),
   })
   .refine((data) => data.id || (data.position && data.label), {
     message: 'Sub-question id or both position and label are required',
@@ -60,7 +136,10 @@ const updateSubQuestionInputSchema = z
       data.marks !== undefined ||
       data.position !== undefined ||
       data.questionType !== undefined ||
-      data.mcqOptions !== undefined,
+      data.mcqOptions !== undefined ||
+      data.template !== undefined ||
+      data.circuitTemplate !== undefined ||
+      data.imageCompositionTemplate !== undefined,
     { message: 'At least one sub-question field must be provided' }
   )
   .refine(
@@ -139,3 +218,5 @@ export type CreateQuestionsInput = z.infer<typeof createQuestionsSchema>;
 export type UpdateQuestionInput = z.infer<typeof updateQuestionInputSchema>;
 export type UpdateQuestionsInput = z.infer<typeof updateQuestionsSchema>;
 export type UpdateSubQuestionInput = z.infer<typeof updateSubQuestionInputSchema>;
+export type CircuitTemplateInput = z.infer<typeof circuitTemplateSchema>;
+export type ImageCompositionTemplateInput = z.infer<typeof imageCompositionTemplateSchema>;

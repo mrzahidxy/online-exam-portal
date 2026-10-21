@@ -1,12 +1,13 @@
 {
   "name": "e-assessment",
   "version": "1.0.0",
-  "description": "Production-ready PERN stack starter API with Prisma, JWT auth, and Google Cloud Storage uploads.",
+  "description": "Production-ready PERN stack starter API with Prisma, JWT auth, and Cloudinary uploads.",
   "private": true,
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon",
     "build": "tsc -p tsconfig.json",
+    "test": "node -r ts-node/register/transpile-only --test test/milestone1-security.test.cjs",
     "start": "node dist/server.js",
     "start:prod": "node dist/server.js",
     "seed": "ts-node --project tsconfig.json prisma/seed.ts",
@@ -28,7 +29,6 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@google-cloud/storage": "^7.17.3",
     "@prisma/client": "^5.19.1",
     "bcrypt": "^5.1.1",
     "compression": "^1.7.4",

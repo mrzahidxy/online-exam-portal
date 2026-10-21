@@ -5,7 +5,7 @@ import Link from "next/link"
 import { AdminHeader } from "@/components/admin-header"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { FileText, Plus } from "lucide-react"
+import { FileText, Plus, ShieldAlert } from "lucide-react"
 import { useQuestions } from "@/hooks/queries/useQuestions"
 import { formatStatusLabel, getStatusTone } from "@/lib/helpers/questions"
 import type { PaperRecord } from "@/types/questions"
@@ -50,6 +50,12 @@ export default function AdminPapersPage() {
             <p className="text-sm text-muted-foreground">Create, view, and manage assessments</p>
           </div>
           <div className="flex gap-3">
+            <Link href="/admin/security">
+              <Button variant="outline" size="sm" className="gap-2 px-4 shadow-sm">
+                <ShieldAlert className="w-3 h-3" />
+                Security
+              </Button>
+            </Link>
             <Link href="/admin/questions/create-paper">
               <Button size="sm" className="gap-2 px-4 shadow-sm">
                 <Plus className="w-3 h-3" />

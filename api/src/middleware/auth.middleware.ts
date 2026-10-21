@@ -24,6 +24,12 @@ const normalizeOptions = (allowed?: GuardOptions): { roles?: UserRole[] } => {
   return allowed;
 };
 
+const isPrismaConnectionError = (error: unknown) =>
+  typeof error === 'object' &&
+  error !== null &&
+  'code' in error &&
+  (error as { code?: unknown }).code === 'P1001';
+
 export const requireAuth =
   (allowed?: GuardOptions) => async (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
     try {
@@ -64,7 +70,9 @@ export const requireAuth =
         throw new HttpError(401, 'User could not be found');
       }
 
-      const effectiveRoles = (payload.roles ?? []).length > 0 ? payload.roles : [dbUser.role];
+      // JWT roles are a snapshot and may outlive an administrator demotion.
+      // Always derive authorization from the current database record.
+      const effectiveRoles = [dbUser.role];
 
       const userWithRoles = normalizeUser({
         ...(dbUser as SanitizedUser),
@@ -83,6 +91,11 @@ export const requireAuth =
       req.auth = { ...payload, roles: effectiveRoles };
       next();
     } catch (error) {
+      if (isPrismaConnectionError(error)) {
+        next(new HttpError(503, 'Database is temporarily unavailable'));
+        return;
+      }
+
       next(error);
     }
   };

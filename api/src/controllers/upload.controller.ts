@@ -15,4 +15,17 @@ export const uploadController = {
       next(error);
     }
   },
+
+  uploadMedia: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: 'File is required' });
+      }
+
+      const result = await uploadService.uploadMedia(req.file);
+      return res.status(201).json(result);
+    } catch (error) {
+      return next(error);
+    }
+  },
 };

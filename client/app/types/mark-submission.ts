@@ -1,3 +1,7 @@
+import type { CircuitTemplate } from "@/lib/circuit-template";
+import type { ImageCompositionTemplate } from "@/lib/image-composition-template";
+import type { InteractiveTableTemplate } from "@/lib/interactive-table";
+
 export type Role = "admin" | "student";
 
 export type QuestionType = "mcq" | "short-answer" | "essay" | "numerical" | "table";
@@ -23,13 +27,16 @@ export interface SubQuestion {
   question: string;
   marks: number;
   position: number;
-  questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE";
+  questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "INTERACTIVE_TABLE" | "CIRCUIT" | "DRAWING" | "IMAGE_COMPOSITION";
   mcqOptions?: {
     options: Array<{
       label: string;
       value: string;
     }>;
   } | null;
+  circuitTemplate?: CircuitTemplate | null;
+  imageCompositionTemplate?: ImageCompositionTemplate | null;
+  template?: InteractiveTableTemplate | null;
 }
 
 export interface Assessment {
@@ -118,13 +125,16 @@ export interface SubmissionDetailSubQuestion {
   question?: string | null;
   marks?: number | null;
   position?: number | null;
-  questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE";
+  questionType?: "DESCRIPTIVE" | "MCQ" | "GRAPH" | "TABLE" | "INTERACTIVE_TABLE" | "CIRCUIT" | "DRAWING" | "IMAGE_COMPOSITION";
   mcqOptions?: {
     options: Array<{
       label: string;
       value: string;
     }>;
   } | null;
+  circuitTemplate?: CircuitTemplate | null;
+  imageCompositionTemplate?: ImageCompositionTemplate | null;
+  template?: InteractiveTableTemplate | null;
   answer?: SubmissionDetailAnswer | null;
 }
 

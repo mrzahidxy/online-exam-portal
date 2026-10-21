@@ -7,7 +7,10 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSubmissionDetail } from "@/hooks/queries/useSubmissionDetail"
 import { GraphAnswerEditor } from "@/components/exam/graph-answer"
+import { DrawingAnswerEditor } from "@/components/exam/drawing-answer"
+import { ImageCompositionAnswerEditor } from "@/components/exam/image-composition-answer"
 import { TableAnswerEditor } from "@/components/exam/table-answer"
+import { InteractiveTableReview } from "@/components/exam/interactive-table-renderer"
 
 export default function StudentFeedbackPage({
   params,
@@ -73,6 +76,9 @@ export default function StudentFeedbackPage({
                       const comment =
                         subQuestion.answer?.comment ?? subQuestion.answer?.marks?.comment ?? ""
                       const isGraph = subQuestion.questionType === "GRAPH"
+                      const isDrawing = subQuestion.questionType === "DRAWING"
+                      const isImageComposition = subQuestion.questionType === "IMAGE_COMPOSITION"
+                      const isInteractiveTable = subQuestion.questionType === "INTERACTIVE_TABLE"
                       const isTable = subQuestion.questionType === "TABLE"
                       return (
                         <div
@@ -93,15 +99,41 @@ export default function StudentFeedbackPage({
                           </div>
                           <div className="text-sm bg-muted/40 rounded p-2 min-h-10 text-foreground leading-snug">
                             {isGraph ? (
-                              <GraphAnswerEditor
-                                value={subQuestion.answer?.answerText ?? ""}
-                                readonly
-                              />
+                              <div className="not-prose">
+                                <GraphAnswerEditor
+                                  value={subQuestion.answer?.answerText ?? ""}
+                                  readonly
+                                />
+                              </div>
+                            ) : isDrawing ? (
+                              <div className="not-prose">
+                                <DrawingAnswerEditor
+                                  value={subQuestion.answer?.answerText ?? ""}
+                                  readonly
+                                />
+                              </div>
+                            ) : isImageComposition ? (
+                              <div className="not-prose">
+                                <ImageCompositionAnswerEditor
+                                  value={subQuestion.answer?.answerText ?? ""}
+                                  readonly
+                                  template={subQuestion.imageCompositionTemplate ?? undefined}
+                                />
+                              </div>
+                            ) : isInteractiveTable ? (
+                              <div className="not-prose">
+                                <InteractiveTableReview
+                                  value={subQuestion.answer?.answerText ?? ""}
+                                  template={subQuestion.template ?? undefined}
+                                />
+                              </div>
                             ) : isTable ? (
-                              <TableAnswerEditor
-                                value={subQuestion.answer?.answerText ?? ""}
-                                readonly
-                              />
+                              <div className="not-prose">
+                                <TableAnswerEditor
+                                  value={subQuestion.answer?.answerText ?? ""}
+                                  readonly
+                                />
+                              </div>
                             ) : (
                               <div
                                 dangerouslySetInnerHTML={{

@@ -32,6 +32,10 @@ const RichTextEditor = dynamic(
   }
 );
 import { useToast } from '@/hooks/use-toast';
+import { CircuitBoardDesigner } from '@/components/exam/circuit-board-designer';
+import { ImageCompositionBoardDesigner } from '@/components/exam/image-composition-board-designer';
+import { InteractiveTableBuilder } from '@/components/exam/interactive-table-builder';
+import { InteractiveTablePreview } from '@/components/exam/interactive-table-renderer';
 import {
   addQuestionsToPaper,
   fetchPaper,
@@ -39,6 +43,22 @@ import {
   type PaperQuestionPayload,
   type PaperResponse,
 } from '@/lib/paper-service';
+import {
+  createDefaultCircuitTemplate,
+  normalizeCircuitTemplate,
+  type CircuitTemplate,
+} from '@/lib/circuit-template';
+import {
+  createDefaultImageCompositionTemplate,
+  normalizeImageCompositionTemplate,
+  type ImageCompositionTemplate,
+} from '@/lib/image-composition-template';
+import {
+  createDefaultInteractiveTableTemplate,
+  normalizeInteractiveTableTemplate,
+  validateInteractiveTableTemplate,
+  type InteractiveTableTemplate,
+} from '@/lib/interactive-table';
 
 interface QuestionBuilderPageProps {
   paperId?: string;
@@ -49,12 +69,25 @@ type McqOption = {
   value: string;
 };
 
+type SubQuestionType =
+  | 'DESCRIPTIVE'
+  | 'MCQ'
+  | 'GRAPH'
+  | 'TABLE'
+  | 'INTERACTIVE_TABLE'
+  | 'CIRCUIT'
+  | 'DRAWING'
+  | 'IMAGE_COMPOSITION';
+
 type SubQuestion = {
   sub_question_id: string;
   question: string;
   marks: number;
-  type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE';
+  type: SubQuestionType;
   options: McqOption[];
+  circuitTemplate: CircuitTemplate | null;
+  imageCompositionTemplate: ImageCompositionTemplate | null;
+  template: InteractiveTableTemplate | null;
 };
 
 type Question = {
@@ -62,9 +95,15 @@ type Question = {
   question_number: number;
   description: string;
   marks: number;
-  type: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE';
+  type: SubQuestionType;
   sub_questions: SubQuestion[];
 };
+
+const DEFAULT_CIRCUIT_TEMPLATE: CircuitTemplate = createDefaultCircuitTemplate();
+const DEFAULT_IMAGE_COMPOSITION_TEMPLATE: ImageCompositionTemplate =
+  createDefaultImageCompositionTemplate();
+const DEFAULT_INTERACTIVE_TABLE_TEMPLATE: InteractiveTableTemplate =
+  createDefaultInteractiveTableTemplate();
 
 type ExamPaper = {
   title: string;
@@ -91,6 +130,9 @@ const DEFAULT_EXAM: ExamPaper = {
           marks: 1,
           type: 'DESCRIPTIVE',
           options: [],
+          circuitTemplate: null,
+          imageCompositionTemplate: null,
+          template: null,
         },
       ],
     },
@@ -104,6 +146,9 @@ const createBlankExam = (): ExamPaper => ({
     sub_questions: q.sub_questions.map((sq) => ({
       ...sq,
       options: [...(sq.options || [])],
+      template: sq.template
+        ? normalizeInteractiveTableTemplate(sq.template)
+        : null,
     })),
   })),
 });
@@ -147,11 +192,17 @@ const mapPaperResponseToExam = (paper: PaperResponse): ExamPaper => {
                 ),
                 marks: subQuestion.marks ?? 0,
                 type: (subQuestion.questionType ?? 'DESCRIPTIVE') as
-                  | 'DESCRIPTIVE'
-                  | 'MCQ'
-                  | 'GRAPH'
-                  | 'TABLE',
+                  SubQuestionType,
                 options: mcqOptions,
+                circuitTemplate: normalizeCircuitTemplate(
+                  subQuestion.circuitTemplate
+                ),
+                imageCompositionTemplate: normalizeImageCompositionTemplate(
+                  subQuestion.imageCompositionTemplate
+                ),
+                template: subQuestion.template
+                  ? normalizeInteractiveTableTemplate(subQuestion.template)
+                  : null,
               };
             })
           : [
@@ -161,6 +212,9 @@ const mapPaperResponseToExam = (paper: PaperResponse): ExamPaper => {
                 marks: 1,
                 type: 'DESCRIPTIVE' as const,
                 options: [],
+                circuitTemplate: null,
+                imageCompositionTemplate: null,
+                template: null,
               },
             ];
 
@@ -251,17 +305,20 @@ export default function QuestionBuilderPage({
         question_number: count,
         description: '',
         marks: 1,
-        type: 'DESCRIPTIVE',
-        sub_questions: [
-          {
-            sub_question_id: 'a',
-            question: '',
-            marks: 1,
             type: 'DESCRIPTIVE',
-            options: [],
-          },
-        ],
-      };
+            sub_questions: [
+              {
+                sub_question_id: 'a',
+                question: '',
+                marks: 1,
+                type: 'DESCRIPTIVE',
+                options: [],
+                circuitTemplate: null,
+                imageCompositionTemplate: null,
+                template: null,
+              },
+            ],
+          };
       return {
         ...prev,
         questions: [...prev.questions, newQuestion],
@@ -299,6 +356,9 @@ export default function QuestionBuilderPage({
                 marks: 1,
                 type: 'DESCRIPTIVE',
                 options: [],
+                circuitTemplate: null,
+                imageCompositionTemplate: null,
+                template: null,
               },
             ],
           };
@@ -475,6 +535,23 @@ export default function QuestionBuilderPage({
   const currentSubQuestion = currentQuestion?.sub_questions.find(
     (sq) => sq.sub_question_id === currentSubQuestionId
   );
+  const currentSubQuestionTypeLabel = currentSubQuestion
+    ? currentSubQuestion.type === 'MCQ'
+      ? 'MCQ'
+      : currentSubQuestion.type === 'GRAPH'
+        ? 'Graph'
+        : currentSubQuestion.type === 'TABLE'
+          ? 'Table'
+          : currentSubQuestion.type === 'INTERACTIVE_TABLE'
+            ? 'Interactive Table'
+            : currentSubQuestion.type === 'CIRCUIT'
+              ? 'Circuit'
+              : currentSubQuestion.type === 'DRAWING'
+                ? 'Drawing'
+                : currentSubQuestion.type === 'IMAGE_COMPOSITION'
+                  ? 'Image Composition'
+                  : 'Descriptive'
+    : 'Descriptive';
   const hasExistingQuestions = (paperMeta?.questions?.length ?? 0) > 0;
 
   const questionPayload = useMemo<PaperQuestionPayload[]>(
@@ -498,6 +575,27 @@ export default function QuestionBuilderPage({
                         mcqOptions: {
                           options: subQuestion.options,
                         },
+                      }
+                    : {}),
+                  ...(subQuestion.type === 'CIRCUIT'
+                    ? {
+                        circuitTemplate:
+                          subQuestion.circuitTemplate ??
+                          DEFAULT_CIRCUIT_TEMPLATE,
+                      }
+                    : {}),
+                  ...(subQuestion.type === 'IMAGE_COMPOSITION'
+                    ? {
+                        imageCompositionTemplate:
+                          subQuestion.imageCompositionTemplate ??
+                          DEFAULT_IMAGE_COMPOSITION_TEMPLATE,
+                      }
+                    : {}),
+                  ...(subQuestion.type === 'INTERACTIVE_TABLE'
+                    ? {
+                        template:
+                          subQuestion.template ??
+                          DEFAULT_INTERACTIVE_TABLE_TEMPLATE,
                       }
                     : {}),
                 })
@@ -544,6 +642,32 @@ export default function QuestionBuilderPage({
     console.log('Saving draft exam paper', exam);
   };
 
+  const getInteractiveTableValidationErrors = () =>
+    exam.questions.flatMap((question) =>
+      question.sub_questions.flatMap((subQuestion) => {
+        if (subQuestion.type !== 'INTERACTIVE_TABLE') return [];
+        const validation = validateInteractiveTableTemplate(
+          subQuestion.template ?? DEFAULT_INTERACTIVE_TABLE_TEMPLATE
+        );
+        return validation.errors.map(
+          (error) =>
+            `Question ${question.question_number}${subQuestion.sub_question_id}: ${error}`
+        );
+      })
+    );
+
+  const validateBeforeSave = () => {
+    const errors = getInteractiveTableValidationErrors();
+    if (errors.length === 0) return true;
+
+    toast({
+      title: 'Interactive table needs attention',
+      description: errors.slice(0, 3).join(' '),
+      variant: 'destructive',
+    });
+    return false;
+  };
+
   const handleSubmitPaper = async () => {
     if (!paperIdValue) {
       toast({
@@ -554,6 +678,8 @@ export default function QuestionBuilderPage({
       });
       return;
     }
+
+    if (!validateBeforeSave()) return;
 
     setIsSubmitting(true);
     try {
@@ -600,6 +726,8 @@ export default function QuestionBuilderPage({
       });
       return;
     }
+
+    if (!validateBeforeSave()) return;
 
     setIsUpdatingQuestions(true);
     try {
@@ -998,15 +1126,51 @@ export default function QuestionBuilderPage({
                           </Label>
                           <Select
                             value={currentSubQuestion.type}
-                            onValueChange={(value: 'DESCRIPTIVE' | 'MCQ' | 'GRAPH' | 'TABLE') => {
-                              updateSubQuestion(
-                                currentQuestion.id,
-                                currentSubQuestion.sub_question_id,
-                                { type: value }
-                              );
+                            onValueChange={(value) => {
+                              const questionType = value as SubQuestionType;
+                                updateSubQuestion(
+                                  currentQuestion.id,
+                                  currentSubQuestion.sub_question_id,
+                                  { type: questionType }
+                                );
+                              if (questionType === 'CIRCUIT' && !currentSubQuestion.circuitTemplate) {
+                                updateSubQuestion(
+                                  currentQuestion.id,
+                                  currentSubQuestion.sub_question_id,
+                                  {
+                                    circuitTemplate: DEFAULT_CIRCUIT_TEMPLATE,
+                                  }
+                                );
+                              }
+                              if (
+                                questionType === 'IMAGE_COMPOSITION' &&
+                                !currentSubQuestion.imageCompositionTemplate
+                              ) {
+                                updateSubQuestion(
+                                  currentQuestion.id,
+                                  currentSubQuestion.sub_question_id,
+                                  {
+                                    imageCompositionTemplate:
+                                      DEFAULT_IMAGE_COMPOSITION_TEMPLATE,
+                                  }
+                                );
+                              }
+                              if (
+                                questionType === 'INTERACTIVE_TABLE' &&
+                                !currentSubQuestion.template
+                              ) {
+                                updateSubQuestion(
+                                  currentQuestion.id,
+                                  currentSubQuestion.sub_question_id,
+                                  {
+                                    template:
+                                      DEFAULT_INTERACTIVE_TABLE_TEMPLATE,
+                                  }
+                                );
+                              }
                               // Add default options when switching to MCQ
                               if (
-                                value === 'MCQ' &&
+                                questionType === 'MCQ' &&
                                 currentSubQuestion.options.length === 0
                               ) {
                                 updateSubQuestion(
@@ -1023,7 +1187,7 @@ export default function QuestionBuilderPage({
                             }}
                           >
                             <SelectTrigger className="mt-1 text-sm w-full border-2 border-slate-300 hover:border-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500">
-                              <SelectValue placeholder="Select type" />
+                              <SelectValue>{currentSubQuestionTypeLabel}</SelectValue>
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="DESCRIPTIVE">
@@ -1032,11 +1196,8 @@ export default function QuestionBuilderPage({
                               <SelectItem value="MCQ">
                                 Multiple Choice (MCQ)
                               </SelectItem>
-                              <SelectItem value="GRAPH">
-                                Graph Plotting
-                              </SelectItem>
-                              <SelectItem value="TABLE">
-                                Table Answer
+                              <SelectItem value="DRAWING">
+                                Drawing Answer
                               </SelectItem>
                             </SelectContent>
                           </Select>
@@ -1187,6 +1348,99 @@ export default function QuestionBuilderPage({
                         </div>
                       )}
 
+                      {currentSubQuestion.type === 'INTERACTIVE_TABLE' && (
+                        <InteractiveTableBuilder
+                          template={
+                            currentSubQuestion.template ??
+                            DEFAULT_INTERACTIVE_TABLE_TEMPLATE
+                          }
+                          onChange={(nextTemplate) =>
+                            updateSubQuestion(
+                              currentQuestion.id,
+                              currentSubQuestion.sub_question_id,
+                              {
+                                template: nextTemplate,
+                              }
+                            )
+                          }
+                        />
+                      )}
+
+                      {currentSubQuestion.type === 'CIRCUIT' && (
+                        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                          <div>
+                            <Label className="text-sm font-semibold text-slate-700">
+                              Circuit Board Designer
+                            </Label>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Add battery, switch, and bulb components. Drag the pieces to position them on the board.
+                            </p>
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            The template is stored with the question and rendered for students using the same layout.
+                          </p>
+                          <div className="rounded border border-slate-200 bg-white p-3">
+                            <CircuitBoardDesigner
+                              template={currentSubQuestion.circuitTemplate ?? DEFAULT_CIRCUIT_TEMPLATE}
+                              onChange={(nextTemplate) =>
+                                updateSubQuestion(currentQuestion.id, currentSubQuestion.sub_question_id, {
+                                  circuitTemplate: nextTemplate,
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {currentSubQuestion.type === 'DRAWING' && (
+                        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                          <div>
+                            <Label className="text-sm font-semibold text-slate-700">
+                              Drawing Answer
+                            </Label>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Students can draw freehand, lines, rectangles, circles, and arrows. The answer is stored as structured JSON in answerText.
+                            </p>
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            No extra board configuration is needed here. Use the student preview to verify the editor flow.
+                          </p>
+                        </div>
+                      )}
+
+                      {currentSubQuestion.type === 'IMAGE_COMPOSITION' && (
+                        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                          <div>
+                            <Label className="text-sm font-semibold text-slate-700">
+                              Image Composition
+                            </Label>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Students can drag, drop, resize, and layer multiple images on a canvas. The answer is stored as structured JSON in answerText.
+                            </p>
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            This is useful for collage-style tasks, image ordering, or visual assembly questions.
+                          </p>
+                          <div className="rounded border border-slate-200 bg-white p-3">
+                            <ImageCompositionBoardDesigner
+                              template={
+                                currentSubQuestion.imageCompositionTemplate ??
+                                DEFAULT_IMAGE_COMPOSITION_TEMPLATE
+                              }
+                              onChange={(nextTemplate) =>
+                                updateSubQuestion(
+                                  currentQuestion.id,
+                                  currentSubQuestion.sub_question_id,
+                                  {
+                                    imageCompositionTemplate: nextTemplate,
+                                  }
+                                )
+                              }
+                            />
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex gap-2 pt-4">
                         <Button
                           onClick={() =>
@@ -1234,14 +1488,8 @@ export default function QuestionBuilderPage({
                         {currentSubQuestion.marks} mark
                         {currentSubQuestion.marks !== 1 ? 's' : ''}
                       </span>
-                        <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
-                        {currentSubQuestion.type === 'MCQ'
-                          ? 'MCQ'
-                          : currentSubQuestion.type === 'GRAPH'
-                            ? 'Graph'
-                            : currentSubQuestion.type === 'TABLE'
-                              ? 'Table'
-                            : 'Descriptive'}
+                      <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
+                        {currentSubQuestionTypeLabel}
                       </span>
                     </div>
                     <div
@@ -1268,6 +1516,17 @@ export default function QuestionBuilderPage({
                           ))}
                         </div>
                       )}
+
+                    {currentSubQuestion.type === 'INTERACTIVE_TABLE' && (
+                      <div className="mt-3">
+                        <InteractiveTablePreview
+                          template={
+                            currentSubQuestion.template ??
+                            DEFAULT_INTERACTIVE_TABLE_TEMPLATE
+                          }
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

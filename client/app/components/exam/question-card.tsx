@@ -108,6 +108,9 @@ export const QuestionCard = memo(function QuestionCard({
               marks={subQuestion.marks}
               questionType={(subQuestion as any).questionType}
               mcqOptions={(subQuestion as any).mcqOptions}
+              circuitTemplate={(subQuestion as any).circuitTemplate}
+              imageCompositionTemplate={(subQuestion as any).imageCompositionTemplate}
+              template={(subQuestion as any).template}
               answer={answers[subQuestion.id] || ""}
               onAnswerChange={(value) => onAnswerChange(subQuestion.id, value)}
               subQuestionId={subQuestion.id}

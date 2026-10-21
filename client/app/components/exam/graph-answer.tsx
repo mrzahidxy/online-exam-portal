@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { Circle, Minus, Trash2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type GraphPoint = {
@@ -219,28 +220,50 @@ export function GraphAnswerEditor({
   return (
     <div className={className ?? "space-y-3"}>
       {!readonly && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-nowrap items-center gap-1 overflow-x-auto rounded-md border border-border bg-slate-50 p-1">
           <Button
             type="button"
             size="sm"
             variant={mode === "point" ? "default" : "outline"}
+            className="h-8 w-8 shrink-0 p-0"
             onClick={() => setMode("point")}
+            title="Plot Point"
+            aria-label="Plot Point"
           >
-            Plot Point
+            <Circle className="h-3.5 w-3.5" />
           </Button>
           <Button
             type="button"
             size="sm"
             variant={mode === "line" ? "default" : "outline"}
+            className="h-8 w-8 shrink-0 p-0"
             onClick={() => setMode("line")}
+            title="Draw Line"
+            aria-label="Draw Line"
           >
-            Draw Line
+            <Minus className="h-3.5 w-3.5" />
           </Button>
-          <Button type="button" size="sm" variant="outline" onClick={removeLastPoint}>
-            Undo Point
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 w-8 shrink-0 p-0"
+            onClick={removeLastPoint}
+            title="Undo Point"
+            aria-label="Undo Point"
+          >
+            <Undo2 className="h-3.5 w-3.5" />
           </Button>
-          <Button type="button" size="sm" variant="outline" onClick={clearAll}>
-            Clear
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 w-8 shrink-0 p-0 text-red-600 hover:text-red-700"
+            onClick={clearAll}
+            title="Clear"
+            aria-label="Clear"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
           </Button>
         </div>
       )}

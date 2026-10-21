@@ -66,44 +66,37 @@ export default function AdminSubmissionPage({
       });
     });
 
-    const payloadMap = new Map<
-      string,
-      { subQuestionId: string; assignedMarks: number; comment?: string }
-    >();
+    const gradeValues = new Map(gradeEntries);
+    const commentValues = new Map(commentEntries);
+    const subQuestions = (submission.paper?.questions ?? []).flatMap(
+      (question) => question.subQuestions ?? []
+    );
+    const missingGrades = subQuestions.filter(
+      (subQuestion) =>
+        !gradeValues.has(subQuestion.id) && !existingMarks.has(subQuestion.id)
+    );
 
-    gradeEntries.forEach(([subQuestionId, value]) => {
-      if (!subQuestionId) return;
-      payloadMap.set(subQuestionId, {
-        subQuestionId,
-        assignedMarks: value,
-      });
-    });
-
-    commentEntries.forEach(([subQuestionId, value]) => {
-      if (!subQuestionId) return;
-      const trimmed = value.trim();
-      const existing = payloadMap.get(subQuestionId);
-      const assignedMarks =
-        existing?.assignedMarks ??
-        existingMarks.get(subQuestionId) ??
-        0;
-      payloadMap.set(subQuestionId, {
-        subQuestionId,
-        assignedMarks,
-        comment: trimmed,
-      });
-    });
-
-    const payload = Array.from(payloadMap.values());
-
-    if (payload.length === 0) {
+    if (subQuestions.length === 0 || missingGrades.length > 0) {
       toast({
-        title: "No valid feedback",
-        description: "Could not find valid sub-question IDs to submit.",
+        title: "Grading is incomplete",
+        description:
+          subQuestions.length === 0
+            ? "This paper has no sub-questions to grade."
+            : `Assign marks to all sub-questions before submitting. ${missingGrades.length} remain ungraded.`,
         variant: "destructive",
       });
       return;
     }
+
+    const payload = subQuestions.map((subQuestion) => {
+      const comment = commentValues.get(subQuestion.id)?.trim();
+      return {
+        subQuestionId: subQuestion.id,
+        assignedMarks:
+          gradeValues.get(subQuestion.id) ?? existingMarks.get(subQuestion.id)!,
+        ...(comment ? { comment } : {}),
+      };
+    });
 
     try {
       await gradeSubmission.mutateAsync({
