@@ -160,8 +160,25 @@ export default function StudentAssessment({
       setLockReason(violationType);
       setUnlockError(null);
       setIsExamLocked(true);
+
+      void backendApiFetch<{ logged: boolean }>("/security/incidents", {
+        method: "POST",
+        body: JSON.stringify({
+          paperId: assessmentId,
+          violationType,
+          details,
+        }),
+      })
+        .then((result) => {
+          if (!result.success) {
+            console.warn("Could not log exam security incident:", result.error);
+          }
+        })
+        .catch((error) => {
+          console.warn("Could not log exam security incident:", error);
+        });
     },
-    [submitted]
+    [assessmentId, submitted]
   );
 
   const enterFullscreen = useCallback(async () => {
@@ -181,6 +198,22 @@ export default function StudentAssessment({
     isUnlockTransitionRef.current = true;
 
     try {
+      // Request fullscreen before awaiting verification to preserve user activation.
+      if (!document.fullscreenElement) {
+        try {
+          await enterFullscreen();
+        } catch (err) {
+          console.error("Error re-entering fullscreen before unlock:", err);
+          setUnlockError("Fullscreen could not be restored. Allow fullscreen, then try again.");
+          return;
+        }
+      }
+
+      if (!document.fullscreenElement) {
+        setUnlockError("Return to fullscreen before continuing the assessment.");
+        return;
+      }
+
       const result = await backendApiFetch<{ unlocked: boolean }>(
         "/security/exam-unlock",
         {
@@ -202,23 +235,11 @@ export default function StudentAssessment({
       setIsExamLocked(false);
       setLockReason(null);
       setAdminUnlockCode("");
-
-      try {
-        await enterFullscreen();
-      } catch (err) {
-        console.error("Error re-entering fullscreen after unlock:", err);
-      } finally {
-        window.setTimeout(() => {
-          isUnlockTransitionRef.current = false;
-        }, 500);
-      }
     } finally {
       setIsUnlocking(false);
-      if (isUnlockTransitionRef.current) {
-        window.setTimeout(() => {
-          isUnlockTransitionRef.current = false;
-        }, 500);
-      }
+      window.setTimeout(() => {
+        isUnlockTransitionRef.current = false;
+      }, 500);
     }
   }, [adminUnlockCode, assessmentId, enterFullscreen]);
 
@@ -411,7 +432,9 @@ export default function StudentAssessment({
 
       if (devToolsDetected) {
         setIsDevToolsOpen(true);
-        lockExam("DEVTOOLS", "DevTools dimension threshold exceeded");
+        if (hasStartedExam) {
+          lockExam("DEVTOOLS", "DevTools dimension threshold exceeded");
+        }
       } else {
         setIsDevToolsOpen(false);
       }
@@ -423,7 +446,7 @@ export default function StudentAssessment({
     const interval = setInterval(detectDevTools, 500);
 
     return () => clearInterval(interval);
-  }, [lockExam]);
+  }, [hasStartedExam, lockExam]);
 
   // Security: Monitor fullscreen and lock exam if exited
   useEffect(() => {
@@ -601,7 +624,7 @@ export default function StudentAssessment({
     if (
       hasStartedExam &&
       !submitted &&
-      (timeRemaining <= 1 || currentTime > endsAt)
+      (timeRemaining <= 10 || currentTime > endsAt)
     ) {
       submitAssessment(true);
     }
